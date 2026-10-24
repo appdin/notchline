@@ -88,8 +88,10 @@ Sources/
 │   ├── NotchlineApp.swift           // @main, MenuBarExtra
 │   ├── AppState.swift               // owns ConditionsModel; refresh timer, wake and network triggers, stored location
 │   ├── DangerStyle.swift            // danger scale colors and badge
-│   ├── Notch/                       // Phase 3: NotchController, compact and expanded views
-│   ├── Menu/MenuContentView.swift   // summary, location picker, refresh, quit (pin and settings in Phases 3 and 6)
+│   ├── ConditionsSummaryView.swift  // metrics and avalanche summary shared by the menu and expanded notch
+│   ├── Notch/NotchController.swift  // owns the DynamicNotch; pin, hover expand and collapse, screen changes
+│   ├── Notch/NotchViews.swift       // compact leading and trailing, expanded view
+│   ├── Menu/MenuContentView.swift   // summary, location picker, pin toggle, refresh, quit (settings in Phase 6)
 │   └── Settings/SettingsView.swift  // Phase 6
 └── notchline-fetch/main.swift       // debug command: live snapshot for one location
 Tests/NotchlineTests/
@@ -232,7 +234,9 @@ let notch = DynamicNotch {
 await notch.expand()
 ```
 
-The current API also supports separate compact leading and trailing content, hover behavior, and `.notch` / `.floating` styles (floating is used automatically on Macs without a notch). Confirm the exact initializer against the package's doc comments and unit tests for the resolved version, then pin that version.
+Pinned at 1.1.0. The initializer is `DynamicNotch(hoverBehavior:style:expanded:compactLeading:compactTrailing:)`, with `.auto` style picking `.notch` or `.floating` per screen. The package does not expand on hover by itself: it publishes `isHovering`, and `NotchController` calls `expand(on:)` and `compact(on:)` from it. `skipIntermediateHides` is set so the switch does not pass through a hidden state that would end the hover.
+
+The floating style has no compact state (`compact()` hides the window), so on a Mac or display arrangement without a notch, pinning shows nothing and the menu bar is the only surface. The menu says so under the pin toggle. When a notched built-in display is connected alongside an external one, the notch shows on the built-in display.
 
 `NotchController` responsibilities:
 - Own one `DynamicNotch` instance for the app lifetime.
@@ -351,7 +355,6 @@ Done when: Whistler, Revelstoke and Sun Peaks show live avalanche danger and for
 ## Open questions
 
 1. Whether to ask NWAC for API access, for station data closer to the base areas than SNOTEL (Phase 1 found no public API).
-2. Exact DynamicNotchKit initializer for compact leading/trailing in the pinned version (Phase 3).
-3. For locations with two stations (like Baker), show the lower station as "base" by default, or the higher one, or both in the expanded view? Start with the lower station as base and the upper station in the expanded view.
-4. Best observed snow source per BC location (Phase 5).
-5. Which Open-Meteo model to use for BC forecasts (Phase 5, after comparing against observations).
+2. For locations with two stations (like Baker), show the lower station as "base" by default, or the higher one, or both in the expanded view? Start with the lower station as base and the upper station in the expanded view.
+3. Best observed snow source per BC location (Phase 5).
+4. Which Open-Meteo model to use for BC forecasts (Phase 5, after comparing against observations).

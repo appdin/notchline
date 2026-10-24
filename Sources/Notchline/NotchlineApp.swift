@@ -1,7 +1,7 @@
 import SwiftUI
 import NotchlineCore
 
-// Menu bar agent. The notch arrives in Phase 3.
+// Menu bar agent. AppState also puts the conditions beside the notch when pinned.
 @main
 struct NotchlineApp: App {
     @StateObject private var appState = AppState()

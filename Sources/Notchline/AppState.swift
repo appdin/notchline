@@ -4,12 +4,23 @@ import NotchlineCore
 import os
 
 /// Owns the conditions model and decides when to refresh it: on a timer, on wake from sleep,
-/// when the network comes back, and on location change.
+/// when the network comes back, and on location change. Also owns the notch window.
 @MainActor
 final class AppState: ObservableObject {
     static let selectedLocationKey = "selectedLocationID"
+    static let pinToNotchKey = "pinToNotch"
 
     let model: ConditionsModel
+
+    /// Show the compact conditions beside the notch. On by default.
+    @Published var isPinned: Bool {
+        didSet {
+            defaults.set(isPinned, forKey: Self.pinToNotchKey)
+            notch.setPinned(isPinned)
+        }
+    }
+
+    private let notch: NotchController
 
     private let schedule = RefreshSchedule()
     private let defaults: UserDefaults
@@ -35,6 +46,9 @@ final class AppState: ObservableObject {
             Logger(subsystem: "com.appdin.notchline", category: "refresh").error("Snapshot cache unavailable: \(error)")
         }
         model = ConditionsModel(catalog: catalog, selectedID: defaults.string(forKey: Self.selectedLocationKey), store: store)
+        notch = NotchController(model: model)
+        isPinned = defaults.object(forKey: Self.pinToNotchKey) as? Bool ?? true
+        notch.setPinned(isPinned)
 
         observeWake()
         observeNetwork()
