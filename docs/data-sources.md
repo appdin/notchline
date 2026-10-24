@@ -22,16 +22,33 @@ Response: `[{ stationTriplet, data: [{ stationElement: { elementCode: "SNWD", st
 - Readings typically lag real time by 30 to 90 minutes.
 - Station metadata (name, elevation, coordinates, `dataTimeZone`): `GET .../services/v1/stations?stateCds=WA&networkCds=SNTL&activeOnly=true`.
 
-Processing (in `SnotelProvider`): drop suspect, null, negative and future readings, drop jumps over 12 in/hour, base depth is the median of the last 3 readings, 24h is that minus the median of the readings within 2 hours of 24 hours earlier, floored at 0. A station whose latest reading is over 6 hours old is treated as down and the next station for the location is tried.
+Processing (in `SnotelProvider`): drop suspect, null, negative and future readings, drop jumps over 12 in/hour, base depth is the median of the last 3 readings, 24h is that minus the median of the readings within 2 hours of 24 hours earlier, floored at 0. A station whose latest reading is over 6 hours old is treated as down and the next station for the location is tried. If no station has a reading within 6 hours, the most recent reading from any of them is used (the request window limits this to about 30 hours), and the UI dims it with its age.
+
+The AWDB API returns occasional HTTP 500s that succeed on retry. The refresh backoff covers these.
 
 ### Stations per location
 
 | Location | Primary | Fallback | Notes |
 |---|---|---|---|
 | mt-baker | Wells Creek `909:WA:SNTL`, 4,040 ft, 9 km W | Marten Ridge `999:WA:SNTL`, 3,520 ft | Both below the base area (~4,200 ft at Heather Meadows), so depth reads somewhat low |
-| stevens-pass | Stevens Pass `791:WA:SNTL`, 3,940 ft, 0.3 km | none | Nearest others are 20+ km away. On 2026-10-24 it was reporting only sporadically (latest reading 8.5 h old). Watch this once the season starts |
+| stevens-pass | Stevens Pass `791:WA:SNTL`, 3,940 ft, 0.3 km | none | See below |
 | snoqualmie | Olallie Meadows `672:WA:SNTL`, 4,010 ft, 6 km S | Tinkham Creek `899:WA:SNTL`, 3,000 ft | |
-| crystal | Morse Lake `642:WA:SNTL`, 5,400 ft, 3 km | Cayuse Pass `1085:WA:SNTL`, 5,260 ft | |
+| crystal | Morse Lake `642:WA:SNTL`, 5,400 ft, 3 km | Cayuse Pass `1085:WA:SNTL`, 5,260 ft | Fallback reads 10 to 15 in lower |
+
+### In-season check (Phase 4)
+
+Hourly SNWD for 2026-01-01 to 2026-02-28, replayed through the provider rules hour by hour from 2026-01-03:
+
+| Location | Primary current | Fallback used | No current reading |
+|---|---|---|---|
+| stevens-pass | 1,367 of 1,367 h | n/a | 0 h |
+| snoqualmie | 1,367 of 1,367 h | 0 h | 0 h |
+| crystal | 1,291 of 1,367 h | 70 h | 6 h |
+
+No readings were rejected as spikes in that period.
+
+- **Stevens Pass**: 791 reported every hour all winter. Off-season it logs depth only every few hours (temperature stays hourly), which is why it looked down on 2026-10-24. The off-season reading is shown with its age rather than blanked. Candidate fallbacks were rejected: Fish Lake `478:WA:SNTL` (3,440 ft, 23 km) is east of the crest and read about two thirds of Stevens Pass depth, and Icicle Creek `1338:WA:SNTL` has no depth sensor.
+- **Crystal**: both stations drop hours during heavy snow, Morse Lake most in early January (some days had one reading, with QC flag `K`). Cayuse Pass covered most of those gaps.
 
 ## Observed snow: NWAC telemetry (not used)
 

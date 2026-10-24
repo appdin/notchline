@@ -23,11 +23,61 @@ struct SnotelProviderTests {
         #expect(observed.snow24hInches == 0)
     }
 
-    @Test func staleReadingsThrow() throws {
-        #expect(throws: ProviderError.self) {
-            try SnotelProvider.parse(
-                Fixture.data("snotel_909_storm_2026-01-07"), station: wellsCreek, now: date("2026-01-08T12:00:00Z"))
+    @Test func outdatedStationFallsBackToCurrentOne() async throws {
+        // Morse Lake's latest reading is 2026-01-05 00:00 PST, 13.5 hours old. Cayuse Pass is current.
+        let location = try catalogLocation("crystal")
+        let http = StubHTTPClient([
+            ("642:WA:SNTL", .success(try Fixture.data("snotel_642_gap_2026-01-05"))),
+            ("1085:WA:SNTL", .success(try Fixture.data("snotel_1085_2026-01-05"))),
+        ])
+        let observed = try await SnotelProvider(http: http).fetch(for: location, now: date("2026-01-05T21:30:00Z"))
+        #expect(observed.stationName == "Cayuse Pass")
+        #expect(observed.depthInches == 30)
+        #expect(observed.snow24hInches == 3)
+    }
+
+    @Test func usesFreshestOutdatedReadingWhenNoStationIsCurrent() async throws {
+        let location = try catalogLocation("crystal")
+        let http = StubHTTPClient([
+            ("642:WA:SNTL", .success(try Fixture.data("snotel_642_gap_2026-01-05"))),
+            ("1085:WA:SNTL", .failure(.http(status: 500, url: SnotelProvider.baseURL))),
+        ])
+        let observed = try await SnotelProvider(http: http).fetch(for: location, now: date("2026-01-05T21:30:00Z"))
+        #expect(observed.stationName == "Morse Lake")
+        #expect(observed.depthInches == 44)
+        #expect(observed.observedAt == date("2026-01-05T08:00:00Z"))
+        #expect(observed.snow24hInches == nil)
+    }
+
+    @Test func stevensPassOffSeasonUsesSporadicReading() async throws {
+        // Off-season, 791 reports depth only every few hours. Latest is 2026-10-24 04:00 PST, 8.5 hours old.
+        let location = try catalogLocation("stevens-pass")
+        let http = StubHTTPClient([("791:WA:SNTL", .success(try Fixture.data("snotel_791_offseason_2026-10-24")))])
+        let now = date("2026-10-24T20:30:00Z")
+        let observed = try await SnotelProvider(http: http).fetch(for: location, now: now)
+        #expect(observed.depthInches == 0)
+        #expect(observed.observedAt == date("2026-10-24T12:00:00Z"))
+        let snapshot = ConditionsSnapshot(locationID: location.id, observed: observed, fetchedAt: now)
+        #expect(snapshot.isOutdated(.observed, now: now))
+    }
+
+    @Test(arguments: [
+        // Location, station fixture, now (30 min after the latest reading), depth, 24h gain.
+        ("stevens-pass", "snotel_791_storm_2026-01-07", "2026-01-07T18:30:00Z", 58.0, 18.0),
+        ("snoqualmie", "snotel_672_storm_2026-01-06", "2026-01-07T07:30:00Z", 46.0, 12.0),
+        ("crystal", "snotel_642_2026-01-10", "2026-01-10T21:30:00Z", 56.0, 0.0),
+    ])
+    func washingtonPrimaryStationsInSeason(id: String, fixture: String, now: String, depth: Double, gain: Double) async throws {
+        let location = try catalogLocation(id)
+        guard case .snotel(let stations)? = location.observedSnow else {
+            Issue.record("\(id) has no SNOTEL stations")
+            return
         }
+        let http = StubHTTPClient([(stations[0].triplet, .success(try Fixture.data(fixture)))])
+        let observed = try await SnotelProvider(http: http).fetch(for: location, now: date(now))
+        #expect(observed.stationName == stations[0].name)
+        #expect(observed.depthInches == depth)
+        #expect(observed.snow24hInches == gain)
     }
 
     @Test func timestampsUseFixedStandardTimeAcrossDSTChange() throws {

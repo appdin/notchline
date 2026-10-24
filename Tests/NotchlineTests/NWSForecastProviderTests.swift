@@ -8,6 +8,16 @@ struct NWSForecastProviderTests {
         #expect(url.absoluteString == "https://api.weather.gov/gridpoints/SEW/157,123")
     }
 
+    @Test(arguments: [
+        ("nws_points_stevens", "SEW/165,67"),
+        ("nws_points_snoqualmie", "SEW/152,54"),
+        ("nws_points_crystal", "SEW/145,31"),
+    ])
+    func washingtonPointsResolveGridURLs(fixture: String, gridpoint: String) throws {
+        let url = try NWSForecastProvider.parsePoint(Fixture.data(fixture))
+        #expect(url.absoluteString == "https://api.weather.gov/gridpoints/\(gridpoint)")
+    }
+
     @Test func offSeasonGridpointIsZeroWithElevation() throws {
         let forecast = try NWSForecastProvider.parseGridpoint(
             Fixture.data("nws_gridpoint_sew_157_123_offseason"), now: date("2026-10-24T20:00:00Z"))

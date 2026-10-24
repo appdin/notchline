@@ -6,6 +6,7 @@ public struct SnotelProvider: ObservedSnowProvider {
     static let baseURL = URL(string: "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/data")!
 
     /// Readings older than this are treated as a station outage and the next station is tried.
+    /// If every station is older, the most recent reading is used anyway.
     static let maxReadingAge: TimeInterval = 6 * 60 * 60
     /// Depth changes faster than this are treated as sensor spikes or dropouts.
     static let maxInchesPerHour = 12.0
@@ -21,14 +22,24 @@ public struct SnotelProvider: ObservedSnowProvider {
             throw ProviderError.notConfigured("SNOTEL stations for \(location.id)")
         }
         var lastError: Error = ProviderError.noData("SNOTEL")
+        var freshestOutdated: ObservedSnow?
         for station in stations {
             do {
                 let data = try await http.get(Self.requestURL(station: station, now: now))
-                return try Self.parse(data, station: station, now: now)
+                let observed = try Self.parse(data, station: station, now: now)
+                if now.timeIntervalSince(observed.observedAt) <= Self.maxReadingAge {
+                    return observed
+                }
+                if observed.observedAt > freshestOutdated?.observedAt ?? .distantPast {
+                    freshestOutdated = observed
+                }
             } catch {
                 lastError = error
             }
         }
+        // No station is current (some report depth only sporadically off-season). An old reading,
+        // shown dimmed with its age, beats no value.
+        if let freshestOutdated { return freshestOutdated }
         throw lastError
     }
 
@@ -61,9 +72,6 @@ public struct SnotelProvider: ObservedSnowProvider {
         let clean = removeSpikes(readings.sorted { $0.date < $1.date })
         guard let latest = clean.last else {
             throw ProviderError.noData("valid SNWD readings for \(station.triplet)")
-        }
-        guard now.timeIntervalSince(latest.date) <= maxReadingAge else {
-            throw ProviderError.noData("recent SNWD readings for \(station.triplet)")
         }
         let depth = median(of: clean.suffix(3).map(\.inches))
         let snow24h = depth24hAgo(clean, latest: latest.date).map { max(0, depth - $0) }
