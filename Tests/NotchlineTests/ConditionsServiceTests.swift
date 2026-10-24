@@ -58,11 +58,41 @@ struct ConditionsServiceTests {
         #expect(result.snapshot.forecast == nil)
     }
 
-    @Test func bcLocationsReportUnconfiguredSources() async throws {
-        let service = ConditionsService(factory: ProviderFactory(http: StubHTTPClient([])))
-        let result = await service.refresh(try catalogLocation("whistler"), now: now)
-        #expect(Set(result.errors.keys) == Set(Metric.allCases))
-        #expect(result.snapshot.observed == nil && result.snapshot.forecast == nil && result.snapshot.danger == nil)
+    @Test func fetchesAllMetricsForWhistler() async throws {
+        let http = StubHTTPClient([
+            ("SD.csv", .success(try Fixture.data("bc_asws_sd_2026-10-24", ext: "csv"))),
+            ("TA.csv", .success(try Fixture.data("bc_asws_ta_2026-10-24", ext: "csv"))),
+            ("open-meteo", .success(try Fixture.data("open_meteo_whistler_2026-10-24"))),
+            ("avalanche.ca", .success(try Fixture.data("avalanche_canada_point_whistler_offseason"))),
+        ])
+        let now = date("2026-10-24T22:30:00Z")
+        let result = await ConditionsService(factory: ProviderFactory(http: http)).refresh(try catalogLocation("whistler"), now: now)
+        #expect(result.errors.isEmpty)
+        #expect(result.snapshot.observed?.stationName == "Callaghan Creek")
+        #expect(result.snapshot.forecast?.sourceName == "Open-Meteo")
+        #expect(result.snapshot.danger?.zoneName == "Avalanche Canada")
+    }
+
+    @Test func modeledLocationsShareOneOpenMeteoRequest() async throws {
+        let counter = RequestCounter(StubHTTPClient([
+            ("open-meteo", .success(try Fixture.data("open_meteo_whistler_2026-10-24"))),
+            ("avalanche.ca", .success(try Fixture.data("avalanche_canada_point_whistler_offseason"))),
+        ]))
+        let now = date("2026-10-24T22:30:00Z")
+        let result = await ConditionsService(factory: ProviderFactory(http: counter)).refresh(try catalogLocation("revelstoke"), now: now)
+        #expect(result.errors.isEmpty)
+        #expect(result.snapshot.observed?.isModeled == true)
+        #expect(result.snapshot.observed?.stationName == "Open-Meteo model")
+        #expect(await counter.count(matching: "open-meteo") == 1)
+    }
+
+    @Test func usForecastFallsBackToOpenMeteo() async throws {
+        var routes = try routes(forecastDown: true)
+        routes.append(("open-meteo", .success(try Fixture.data("open_meteo_whistler_2026-10-24"))))
+        let result = await ConditionsService(factory: ProviderFactory(http: StubHTTPClient(routes)))
+            .refresh(try catalogLocation("mt-baker"), now: date("2026-10-24T22:30:00Z"))
+        #expect(result.errors[.forecast] == nil)
+        #expect(result.snapshot.forecast?.sourceName == "Open-Meteo")
     }
 
     @Test func snapshotStoreRoundTrips() throws {

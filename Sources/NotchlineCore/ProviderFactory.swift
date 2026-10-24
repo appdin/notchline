@@ -16,27 +16,58 @@ public struct Providers: Sendable {
 /// lookup caches persist across refreshes.
 public struct ProviderFactory: Sendable {
     private let snotel: SnotelProvider
+    private let bcStations: BCSnowStationProvider
     private let nws: NWSForecastProvider
+    private let openMeteo: OpenMeteoProvider
     private let avalancheOrg: AvalancheOrgProvider
+    private let avalancheCanada: AvalancheCanadaProvider
 
-    public init(http: HTTPClient = URLSessionHTTPClient()) {
+    public init(http: HTTPClient = RetryingHTTPClient(URLSessionHTTPClient())) {
         snotel = SnotelProvider(http: http)
+        bcStations = BCSnowStationProvider(http: http)
         nws = NWSForecastProvider(http: http)
+        openMeteo = OpenMeteoProvider(http: http)
         avalancheOrg = AvalancheOrgProvider(http: http)
+        avalancheCanada = AvalancheCanadaProvider(http: http)
     }
 
     public func providers(for location: Location) -> Providers {
         let observed: ObservedSnowProvider? = switch location.observedSnow {
         case .snotel: snotel
-        // Open-Meteo modeled depth arrives in Phase 6.
-        case .modeledOnly, nil: nil
+        case .bcSnowStations: bcStations
+        case .modeledOnly: openMeteo.modeledSnow
+        case nil: nil
         }
         switch location.country {
         case .us:
-            return Providers(observed: observed, forecast: nws, avalanche: location.avalancheCenter == nil ? nil : avalancheOrg)
+            return Providers(
+                observed: observed,
+                forecast: FallbackForecastProvider(primary: nws, fallback: openMeteo.forecast),
+                avalanche: location.avalancheCenter == nil ? nil : avalancheOrg)
         case .ca:
-            // Open-Meteo and Avalanche Canada arrive in Phase 6.
-            return Providers(observed: observed, forecast: nil, avalanche: nil)
+            return Providers(observed: observed, forecast: openMeteo.forecast, avalanche: avalancheCanada)
         }
     }
 }
+
+/// Uses `fallback` when `primary` fails, for example Open-Meteo when NWS is down.
+struct FallbackForecastProvider: SnowForecastProvider {
+    let primary: SnowForecastProvider
+    let fallback: SnowForecastProvider
+
+    func fetch(for location: Location, now: Date) async throws -> SnowForecast {
+        do {
+            return try await primary.fetch(for: location, now: now)
+        } catch let primaryError {
+            do {
+                let forecast = try await fallback.fetch(for: location, now: now)
+                ProviderWarnings.record("Primary forecast failed (\(primaryError)); showing \(forecast.sourceName)")
+                return forecast
+            } catch {
+                ProviderWarnings.record("Fallback forecast also failed: \(error)")
+                throw primaryError
+            }
+        }
+    }
+}
+

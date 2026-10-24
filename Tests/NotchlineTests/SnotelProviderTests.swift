@@ -47,9 +47,9 @@ struct SnotelProviderTests {
         let start = date("2026-01-07T00:00:00Z")
         let values: [Double] = [28, 27, -40, 26, 25]
         let readings = values.enumerated().map {
-            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
+            StationReadings.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
         }
-        #expect(SnotelProvider.removeSpikes(readings, maxPerHour: SnotelProvider.maxDegreesPerHour).map(\.value) == [28, 27, 26, 25])
+        #expect(StationReadings.removeSpikes(readings, maxPerHour: StationReadings.maxDegreesPerHour).map(\.value) == [28, 27, 26, 25])
     }
 
     @Test func outdatedStationFallsBackToCurrentOne() async throws {
@@ -123,18 +123,18 @@ struct SnotelProviderTests {
         let start = date("2026-01-07T00:00:00Z")
         let values: [Double] = [40, 41, 0, 42, 90, 43, 44]
         let readings = values.enumerated().map {
-            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
+            StationReadings.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
         }
-        #expect(SnotelProvider.removeSpikes(readings).map(\.value) == [40, 41, 42, 43, 44])
+        #expect(StationReadings.removeSpikes(readings).map(\.value) == [40, 41, 42, 43, 44])
     }
 
     @Test func badFirstReadingDoesNotRejectEverything() {
         let start = date("2026-01-07T00:00:00Z")
         let values: [Double] = [0, 40, 41, 41, 42]
         let readings = values.enumerated().map {
-            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
+            StationReadings.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
         }
-        #expect(SnotelProvider.removeSpikes(readings).map(\.value) == [40, 41, 41, 42])
+        #expect(StationReadings.removeSpikes(readings).map(\.value) == [40, 41, 41, 42])
     }
 
     @Test func suspectAndMissingValuesAreSkipped() throws {

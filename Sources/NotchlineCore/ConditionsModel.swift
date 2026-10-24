@@ -10,6 +10,8 @@ public final class ConditionsModel: ObservableObject {
     @Published public private(set) var snapshot: ConditionsSnapshot?
     /// Why each metric failed in the selected location's most recent refresh this session.
     @Published public private(set) var errors: [Metric: String] = [:]
+    /// Problems worked around in the selected location's most recent refresh, per metric.
+    @Published public private(set) var warnings: [Metric: [String]] = [:]
     /// True while `snapshot` comes from the cache and the location has not been refreshed this session.
     @Published public private(set) var isShowingCached = false
     @Published public private(set) var isRefreshing = false
@@ -18,6 +20,7 @@ public final class ConditionsModel: ObservableObject {
     private let store: SnapshotStore?
     private var snapshots: [String: ConditionsSnapshot] = [:]
     private var errorsByLocation: [String: [Metric: String]] = [:]
+    private var warningsByLocation: [String: [Metric: [String]]] = [:]
     private var refreshed: Set<String> = []
     private var inFlight: Set<String> = []
 
@@ -49,6 +52,7 @@ public final class ConditionsModel: ObservableObject {
         inFlight.remove(location.id)
         snapshots[location.id] = result.snapshot
         errorsByLocation[location.id] = result.errors
+        warningsByLocation[location.id] = result.warnings
         refreshed.insert(location.id)
         try? store?.save(result.snapshot)
         if location.id == self.location.id {
@@ -67,6 +71,7 @@ public final class ConditionsModel: ObservableObject {
     private func showSelected() {
         snapshot = cached(location.id)
         errors = errorsByLocation[location.id] ?? [:]
+        warnings = warningsByLocation[location.id] ?? [:]
         isShowingCached = snapshot != nil && !refreshed.contains(location.id)
         isRefreshing = inFlight.contains(location.id)
     }

@@ -41,12 +41,13 @@ struct AvalancheOrgProviderTests {
         #expect(summary.validUntil == date("2026-02-11T02:00:00Z"))
     }
 
-    @Test func expiredProductIsIgnored() throws {
+    @Test func expiredProductHasNoRatingUnderTheSharedRule() throws {
         var summary = DangerSummary(zoneName: "West Slopes Central", overall: .low)
-        try AvalancheOrgProvider.applyBands(
-            from: Fixture.data("avalanche_product_wsc_2026-02-10"), to: &summary, now: date("2026-02-12T12:00:00Z"))
-        #expect(summary.upper == nil)
-        #expect(summary.overall == .low)
+        let now = date("2026-02-12T12:00:00Z")
+        try AvalancheOrgProvider.applyBands(from: Fixture.data("avalanche_product_wsc_2026-02-10"), to: &summary, now: now)
+        #expect(summary.validUntil == date("2026-02-11T02:00:00Z"))
+        #expect(summary.current(at: now).overall == .noRating)
+        #expect(summary.current(at: now).upper == nil)
     }
 
     @Test func inSeasonMapLayerRatingWithoutProduct() async throws {

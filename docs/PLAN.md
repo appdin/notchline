@@ -71,18 +71,23 @@ Sources/
 │   ├── LocationCatalog.swift        // loads bundled locations.json
 │   ├── Resources/locations.json     // the launch list above, with coordinates and source config
 │   ├── Models.swift                 // ConditionsSnapshot, ObservedSnow, SnowForecast, DangerSummary
-│   ├── Providers.swift              // provider protocols, HTTPClient, per-location lookup cache
+│   ├── Providers.swift              // provider protocols, HTTPClient, RetryingHTTPClient, LookupCache (shares in-flight loads)
 │   ├── Geo.swift                    // GeoJSON Polygon / MultiPolygon point-in-polygon
 │   ├── US/
 │   │   ├── SnotelProvider.swift
 │   │   ├── NWSForecastProvider.swift
 │   │   └── AvalancheOrgProvider.swift
-│   ├── Canada/                      // Phase 6
-│   │   ├── BCObservedSnowProvider.swift
+│   ├── Canada/
+│   │   ├── BCSnowStationProvider.swift   // BC ENV automated snow weather stations
 │   │   └── AvalancheCanadaProvider.swift
-│   ├── Global/                      // Phase 6
+│   ├── Global/
 │   │   └── OpenMeteoProvider.swift  // forecast for BC, fallback forecast and modeled depth anywhere
-│   ├── ProviderFactory.swift        // picks providers for a Location
+│   ├── StationReadings.swift        // spike filter, median depth, 24h change, station fallback; shared by station sources
+│   ├── TextResponse.swift           // decoding and line splitting for every text (non-JSON) response
+│   ├── LocalTime.swift              // today, daytime and overnight periods in a location's time zone
+│   ├── UnitConversion.swift         // every unit conversion, and checks of the units a source declares
+│   ├── ProviderWarnings.swift       // problems worked around during a fetch, collected per metric
+│   ├── ProviderFactory.swift        // picks providers for a Location; NWS falls back to Open-Meteo
 │   ├── ConditionsService.swift      // fetches all metrics concurrently, merges with the previous snapshot
 │   ├── ConditionsModel.swift        // @MainActor ObservableObject: selected location, per-location snapshot cache
 │   ├── RefreshSchedule.swift        // refresh interval and failure backoff
@@ -108,17 +113,18 @@ Tests/NotchlineTests/
 Locations are data, not code. Adding a ski area should mean adding an entry to `locations.json` and, at most, a station ID. See `Sources/NotchlineCore/Location.swift` for the full model. The parts that matter for sources:
 
 ```swift
+let timeZone: String                  // IANA ID, "America/Los_Angeles"; every local-day decision uses it
 let avalancheCenter: String?          // avalanche.org center ID, "NWAC"; nil outside avalanche.org
 let observedSnow: ObservedSnowSource? // nil until configured
 
 enum ObservedSnowSource: Codable, Hashable {
-    case snotel(stations: [SnotelStation])   // tried in order; later ones are fallbacks
-    case modeledOnly                         // no usable station; Open-Meteo modeled depth, labeled as modeled
+    case snotel(stations: [SnotelStation])          // tried in order; later ones are fallbacks
+    case bcSnowStations(stations: [BCSnowStation])  // BC ENV automated snow weather stations, tried in order
+    case modeledOnly                                // no usable station; Open-Meteo modeled depth, labeled as modeled
 }
 // SnotelStation: triplet ("909:WA:SNTL"), name, elevationFt, utcOffsetHours
+// BCSnowStation: id ("3A20P"), name, elevationFt
 ```
-
-BC sources get their own case once Phase 6 discovery picks them.
 
 Avalanche zones are not hardcoded. They are resolved at runtime from the location's coordinates (see Avalanche below), so a new location gets the right zone automatically.
 
@@ -138,11 +144,19 @@ protocol AvalancheProvider: Sendable {
 
 Providers take an `HTTPClient` so tests can serve fixtures, and `now` so time windows are testable.
 
+Rules every provider follows, each enforced by tests where a test can check it:
+
+- **Text responses.** Providers that parse text rather than JSON (CSV so far) read it through `TextResponse`, which handles LF, CRLF and lone CR line endings and a UTF-8 byte order mark. Swift treats CRLF as one character, so splitting on `"\n"` silently fails on CRLF files. A test fails if code in `NotchlineCore` splits on `"\n"` or decodes response text outside `TextResponse`.
+- **Local time.** "Today", the daytime high period and the overnight low period come from `LocalTime` in the location's `timeZone`, never from a fixed UTC offset, a source's own time zone field, or the Mac's time zone. Fixed offsets go wrong across daylight saving changes.
+- **Units.** The model stores inches, feet, °F and mph. Every conversion goes through `Convert` (a test fails on inline factors elsewhere). When a source labels a value's unit, the provider checks the label with `UnitCheck` first: a required value (snowfall) in another unit fails the metric, an optional one (temperature, wind) is left out with a warning. Sources that do not label units say what they assume where they are parsed.
+- **Warnings, not silent failures.** When a provider works around a problem (an optional part failed, a fallback source or station was used, a request was retried, a field had the wrong unit) it records a `ProviderWarnings` message instead of discarding the error. `ConditionsService` collects them per metric; the UI shows them as tooltips, the app logs them, and `notchline-fetch` prints them. A test fails on `try?` in `NotchlineCore` outside the best-effort snapshot cache.
+- **Retries and shared requests.** The default `HTTPClient` is `RetryingHTTPClient`, which retries once after 2 seconds on a 5xx or 429 response, a timeout or a dropped connection. Anything cached or shared between metrics goes through `LookupCache`, which gives concurrent callers one in-flight load and never keeps a failure.
+
 `ProviderFactory` picks implementations by country:
 
 | Metric | US (WA) | Canada (BC) | Fallback |
 |---|---|---|---|
-| Observed snow | SNOTEL | BC source from Phase 6 discovery | Open-Meteo modeled snow depth, labeled "modeled" |
+| Observed snow | SNOTEL | BC ENV snow stations where one is close enough (see below) | Open-Meteo modeled snow depth, labeled "modeled" |
 | Forecast | NWS gridpoint | Open-Meteo | Open-Meteo |
 | Avalanche | avalanche.org | Avalanche Canada | none (show "unavailable") |
 
@@ -165,6 +179,8 @@ enum DangerLevel: Int, Codable {
     case noRating = 0, low = 1, moderate = 2, considerable = 3, high = 4, extreme = 5
 }
 ```
+
+Avalanche forecasts expire by one rule for every center: once `validUntil` has passed, `DangerSummary.current(at:)` returns no rating (keeping the zone and link), and views read danger through `snapshot.danger(at: now)`, so a cached or overdue forecast never shows as current. Providers pick the right day's rating but do not apply expiry themselves.
 
 Every metric is optional so one failing source never blanks the whole display. Each source fails independently, and the UI shows the last good value with an age indicator.
 
@@ -218,31 +234,35 @@ NWAC telemetry was the original choice because its stations sit closer to the ba
 
 ### Canada: Avalanche Canada danger (public, no key)
 
-Avalanche Canada publishes forecasts for all Canadian regions through a public API with point-based lookup, so the location's coordinates resolve directly to a forecast region (expected: Sea to Sky for Whistler; confirm the regions for Revelstoke and Sun Peaks during discovery).
+`GET https://api.avalanche.ca/forecasts/en/products/point?lat=..&long=..` returns the current forecast for the area containing the point. Each day in `report.dangerRatings` has `alp` / `tln` / `btl` ratings, mapped onto `upper` / `middle` / `lower` and the same 1 to 5 `DangerLevel` scale. Rating values other than low through extreme (`earlyseason`, `norating` and so on) are no rating. The current day is the one whose date falls on today in the report's time zone, or the first day while a forecast published the afternoon before is still valid.
 
-Phase 6 discovery task: confirm the current point-lookup endpoint and response shape (danger ratings by day and by alpine / treeline / below treeline), including the off-season response. Save fixtures. Map Avalanche Canada's elevation bands onto `upper` / `middle` / `lower` and its ratings onto the same 1 to 5 `DangerLevel` scale (both use the North American Public Avalanche Danger Scale).
+Avalanche Canada regroups its subregions into forecast areas day to day and names each area by joining the subregion names (all of BC's in one product off-season), so the zone is labeled "Avalanche Canada" and the forecast link carries the detail. Shapes, archive access and the subregion check are in `docs/data-sources.md`.
 
 ### Canada: forecast (Open-Meteo)
 
 NWS does not cover BC. Use Open-Meteo, which is free with no API key for non-commercial use and requests attribution.
 
-- `GET https://api.open-meteo.com/v1/forecast?latitude=..&longitude=..&elevation=<forecastElevationM>&hourly=snowfall,snow_depth,temperature_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=3`
-- Sum `hourly.snowfall` (cm) over the next 24 hours.
-- Temperature and wind map onto the same fields as NWS: the current hour for temp and wind now, the hourly maxima over 24 hours for the wind peak. Daily max and min are by local calendar day, so high is today's max until late afternoon local time, then tomorrow's; low is the next day's min (closest to the overnight low). `timezone=auto` makes `daily` local; hourly times then come back local too and need the response's `utc_offset_seconds`.
+- `GET https://api.open-meteo.com/v1/forecast?latitude=..&longitude=..&elevation=<forecastElevationM>&hourly=snowfall,snow_depth,temperature_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m&timeformat=unixtime&past_days=1&forecast_days=3`
+- Sum `hourly.snowfall` (cm, each value covering the preceding hour) over the next 24 hours, prorating at the edges.
+- Temperature and wind map onto the same fields as NWS: the nearest hour for temp and wind now, the hourly maxima over 24 hours for the wind peak. High and low come from the hourly temperatures over the `LocalTime` daytime (07:00 to 19:00 local, today's then tomorrow's) and overnight (19:00 to 07:00, the night not yet ended) periods in the location's time zone, mirroring the NWS periods. `timeformat=unixtime` keeps times unambiguous.
+- Each hourly series' unit is checked against `hourly_units` before converting.
+- Modeled depth for `.modeledOnly` comes from `hourly.snow_depth` (m) at the latest hour, and 24h snow from the change since the same hour yesterday (`past_days=1`). Forecast and modeled depth share one request per refresh.
 - Pass `elevation` explicitly so the downscaling targets the ski area, not the grid cell average.
 - Open-Meteo can be pinned to specific models (for example the Canadian GEM/HRDPS models) via the `models` parameter. Compare a few models against observed snowfall in the first weeks of the season and pick one per region.
 
 Open-Meteo is also the forecast fallback for US locations if NWS is down.
 
-### Canada: observed snow (needs discovery)
+### Canada: observed snow
 
-There is no single equivalent of SNOTEL for BC ski areas. Phase 6 discovery task, in order of preference:
-1. Avalanche Canada's map includes a weather station layer. Check whether those stations expose snow depth through an accessible endpoint.
-2. BC Ministry of Environment automated snow weather stations (snow pillows), if one is near a given location.
-3. Environment and Climate Change Canada hourly observations (MSC GeoMet / api.weather.gc.ca), if a station near the location reports snow depth.
-4. If none work for a location, set its source to `.modeledOnly` and show Open-Meteo's modeled `snow_depth`, clearly labeled "modeled" in the UI, with 24h computed from the modeled depth change.
+There is no single equivalent of SNOTEL for BC ski areas. Phase 6 checked, in order of preference: Avalanche Canada's weather stations (no public endpoint), BC Ministry of Environment automated snow weather stations, and Environment and Climate Change Canada observations (no snow depth sensors near the three resorts).
 
-Document the choice per location in `docs/data-sources.md`.
+| Location | Source |
+|---|---|
+| whistler | BC ENV Callaghan Creek `3A20P`, 1,017 m, 11 km, hourly depth and air temperature |
+| revelstoke | `.modeledOnly`: the nearest depth sensor is Rogers Pass, 57 km away in a different snow climate |
+| sun-peaks | `.modeledOnly`: the nearest depth sensor is Turtle, 660 m on a valley floor, 600 m below the base |
+
+BC ENV publishes one CSV per element for all stations since October 1 (megabytes by spring), so `BCSnowStationProvider` requests only the header and the last 48 KB with HTTP range requests. Details in `docs/data-sources.md`.
 
 ## DynamicNotchKit integration
 
@@ -307,8 +327,8 @@ Show a small "modeled" tag next to Base when `baseDepthIsModeled` is true, and a
 - Refresh on wake from sleep (`NSWorkspace.didWakeNotification`), when the network returns (`NWPathMonitor`), and on location change.
 - Persist the last good snapshot per location to `~/Library/Application Support/Notchline/snapshots/<locationID>.json` and load on launch.
 - Values older than 3 hours are shown dimmed with their age.
-- 15 second timeout per request. Exponential backoff on repeated failures, capped at the normal interval.
-- Cache derived lookups (NWS gridpoint URL, avalanche zone ID) per location for a day.
+- 15 second timeout per request, and one retry after 2 seconds for transient failures. Exponential backoff on repeated failures, capped at the normal interval.
+- Cache derived lookups (NWS gridpoint URL, avalanche zone ID, BC file headers) for a day, sharing in-flight loads. The BC header is refetched early if data rows stop matching its column count.
 
 ## Settings (v1)
 
@@ -390,5 +410,5 @@ Done when: Whistler, Revelstoke and Sun Peaks show live avalanche danger, snow, 
 
 1. Whether to ask NWAC for API access, for station data closer to the base areas than SNOTEL (Phase 1 found no public API).
 2. For locations with two stations (like Baker), show the lower station as "base" by default, or the higher one, or both in the expanded view? Start with the lower station as base and the upper station in the expanded view.
-3. Best observed snow source per BC location (Phase 6).
+3. Revelstoke and Sun Peaks show modeled depth. Worth revisiting if a closer station starts reporting depth, or if Avalanche Canada opens up its station data.
 4. Which Open-Meteo model to use for BC forecasts (Phase 6, after comparing against observations).

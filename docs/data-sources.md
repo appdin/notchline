@@ -54,7 +54,7 @@ No readings were rejected as spikes in that period.
 
 `TOBS` is requested in the same call (`elements=SNWD,TOBS`). It is hourly °F at every WA station used, and stays hourly off-season while `SNWD` goes sporadic (Stevens Pass on 2026-10-24: 30 `TOBS` readings and 8 `SNWD` readings in the window). Suspect and null values are dropped, as are jumps over 15 °F/hour. The latest reading comes from the station that supplied the depth. The app shows it when it is no more than 2 hours old, otherwise the NWS forecast for the current hour.
 
-On 2026-10-24 the AWDB API alternated between 1 second responses and requests that hung past 40 seconds, with or without `TOBS`. The 15 second timeout turns these into a stale observed metric until the next refresh.
+On 2026-10-24 the AWDB API alternated between 1 second responses and requests that hung past 40 seconds, with or without `TOBS`. The 15 second timeout plus one retry usually gets past these; otherwise the observed metric is stale until the next refresh.
 
 ## Observed snow: NWAC telemetry (not used)
 
@@ -99,4 +99,41 @@ On 2026-10-24 every NWAC zone was off-season (`danger_level: -1`), with the earl
 
 ## British Columbia (Phase 6)
 
-Not yet investigated. The SNOTEL station list includes some BC sites (for example `1D17P:BC:MSNT`, Chilliwack River, a manual snow course), which may be worth checking alongside the options in the plan.
+Findings from Phase 6 discovery (2026-10-24).
+
+### Avalanche danger: Avalanche Canada
+
+Public, no key. `GET https://api.avalanche.ca/forecasts/en/products/point?lat=..&long=..` returns one product:
+
+- `url`: the forecast page on avalanche.ca.
+- `report.dateIssued`, `report.validUntil` (with and without fractional seconds), `report.timezone` (`America/Vancouver`, not used: local days come from the location's time zone).
+- `report.title`: the forecast area, as its subregion names joined with hyphens.
+- `report.dangerRatings`: one entry per day, `date.value` (for example `2026-02-11T00:00:00Z`, the afternoon of the local day it rates) and `ratings.alp|tln|btl.rating.value`: `low`, `moderate`, `considerable`, `high`, `extreme`, or `norating`, `earlyseason`, `offseason`.
+
+Off-season every BC point resolves to the same product, titled with all ~90 subregions, rated `earlyseason`, valid until 2026-11-26.
+
+Archives: `GET .../forecasts/en/products?date=2026-02-10T18:00:00Z` lists every product current at that time, and `GET .../forecasts/en/areas?date=...` gives their polygons (feature `id` matches the product's `area.id`). The in-season fixture (Brandywine-Garibaldi-Homathko-Spearhead-Tantalus, 2026-02-10) came from there.
+
+Areas are regrouped day to day, so there is no stable area name per resort. Point-in-polygon against the archived areas on 12 dates from December to April found each resort's area always included: Whistler, Brandywine, Garibaldi and Spearhead; Revelstoke, Central Selkirk and North Selkirk; Sun Peaks, North Okanagan and Shuswap. With no subregion polygons published, the zone is labeled "Avalanche Canada".
+
+No public endpoint was found for Avalanche Canada's weather station map.
+
+### Observed snow: BC ENV automated snow weather stations
+
+Public, no key. `https://www.env.gov.bc.ca/wsd/data_searches/snow/asws/data/` has one CSV per element: `SD.csv` (snow depth, cm), `TA.csv` (air temperature, °C), `SW.csv` (snow water equivalent) and others. Each covers all stations from October 1 of the current water year, one row per hour (`DATE(UTC)`, `yyyy-MM-dd HH:mm`), one column per station titled `<id> <name>`, blank where there is no reading. Lines end in CRLF. `*_Archive.csv` holds earlier years (`SD_Archive.csv` is 42 MB). Station locations: BC Data Catalogue WFS layer `WHSE_WATER_MANAGEMENT.SSL_SNOW_ASWS_STNS_SP`.
+
+The current files grow to megabytes by spring. The server supports range requests, so the provider requests `bytes=0-16383` for the header and `bytes=-49152` for the last rows. The newest rows are often blank for a few hours.
+
+| Location | Nearest stations with depth | Choice |
+|---|---|---|
+| whistler | Callaghan Creek `3A20P`, 1,017 m, 11 km; Squamish River Upper `3A25P`, 35 km | Callaghan Creek. Hourly with no gaps over 6 hours and no spikes from November 2025 to April 2026; monthly median depth 1 cm (Nov), 17 cm (Dec), 101 cm (Jan), 90 cm (Feb), 113 cm (Mar) |
+| revelstoke | Mount Revelstoke `2A06P`, 9 km, has a snow pillow but no depth sensor; Rogers Pass Lower `2A34P`, 57 km | Modeled |
+| sun-peaks | Turtle `1F07P`, 660 m, 20 km, new this season | Modeled |
+
+### Observed snow: Environment and Climate Change Canada
+
+`GET https://api.weather.gc.ca/collections/swob-realtime/items?bbox=..&datetime=..` lists real-time observations. Near the three resorts (Whistler Nesters, Callaghan Valley, Revelstoke Airport, Parks Canada stations at Fidelity, Kamloops, Salmon Arm) none reported a snow depth field. Not used.
+
+### Forecast and modeled depth: Open-Meteo
+
+Public, no key for non-commercial use, attribution requested. Request and processing are in the plan. Responses are about 4 KB. The returned `elevation` echoes the requested one in whole meters, and the coordinates snap to the model grid (50.1150, -122.9486 becomes 50.1069, -122.8902). Open-Meteo returned an occasional HTTP 502 that succeeded on retry.

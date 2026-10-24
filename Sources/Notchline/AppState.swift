@@ -73,6 +73,11 @@ final class AppState: ObservableObject {
         for (metric, error) in result.errors.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
             logger.notice("\(result.snapshot.locationID, privacy: .public) \(metric.rawValue, privacy: .public): \(error, privacy: .public)")
         }
+        for (metric, messages) in result.warnings.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            for message in messages {
+                logger.info("\(result.snapshot.locationID, privacy: .public) \(metric.rawValue, privacy: .public) warning: \(message, privacy: .public)")
+            }
+        }
         consecutiveFailures = result.failedMetrics.isEmpty ? 0 : consecutiveFailures + 1
         scheduleNext()
     }

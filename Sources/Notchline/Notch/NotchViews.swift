@@ -9,7 +9,7 @@ struct NotchCompactLeadingView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             HStack(spacing: 4) {
                 Image(systemName: "snowflake")
-                Text(model.snapshot?.observed.map { ConditionsFormat.inches($0.depthInches) } ?? "–")
+                Text(model.snapshot?.observed.map { ConditionsFormat.snow($0.depthInches, model.location.defaultUnits) } ?? "–")
                     .monospacedDigit()
             }
             .font(.system(size: 13, weight: .semibold))
@@ -27,14 +27,14 @@ struct NotchCompactTrailingView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             HStack(spacing: 6) {
                 if let current = model.snapshot?.currentTemp(now: context.date) {
-                    Text(ConditionsFormat.degrees(current.tempF))
+                    Text(ConditionsFormat.degrees(current.tempF, model.location.defaultUnits))
                         .monospacedDigit()
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .fixedSize()
                         .opacity(isDimmed(current.isForecast ? .forecast : .observed, model: model, now: context.date) ? 0.5 : 1)
                 }
-                DangerBadge(level: model.snapshot?.danger?.overall ?? .noRating)
+                DangerBadge(level: model.snapshot?.danger(at: context.date)?.overall ?? .noRating)
                     .opacity(isDimmed(.avalanche, model: model, now: context.date) ? 0.5 : 1)
             }
         }
@@ -78,14 +78,23 @@ struct NotchExpandedView: View {
 
     private var sources: String {
         var names: [String] = []
-        if model.snapshot?.observed != nil, case .snotel = model.location.observedSnow {
-            names.append("USDA NRCS SNOTEL")
+        if model.snapshot?.observed != nil {
+            switch model.location.observedSnow {
+            case .snotel: names.append("USDA NRCS SNOTEL")
+            case .bcSnowStations: names.append("BC ENV snow stations")
+            case .modeledOnly: names.append(OpenMeteoProvider.sourceName)
+            case nil: break
+            }
         }
-        if let forecast = model.snapshot?.forecast {
+        if let forecast = model.snapshot?.forecast, !names.contains(forecast.sourceName) {
             names.append(forecast.sourceName)
         }
-        if model.snapshot?.danger != nil, let center = model.location.avalancheCenter {
-            names.append("\(center) via avalanche.org")
+        if model.snapshot?.danger != nil {
+            if let center = model.location.avalancheCenter {
+                names.append("\(center) via avalanche.org")
+            } else if model.location.country == .ca {
+                names.append(AvalancheCanadaProvider.zoneName)
+            }
         }
         return names.isEmpty ? "" : "Data: " + names.joined(separator: ", ")
     }

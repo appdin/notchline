@@ -8,6 +8,7 @@
     "kind": "skiArea",
     "latitude": 48.863,
     "longitude": -121.678,
+    "timeZone": "America/Los_Angeles",
     "forecastElevationFt": 4500,
     "avalancheCenter": "NWAC",
     "observedSnow": {
@@ -32,6 +33,7 @@
     "kind": "skiArea",
     "latitude": 47.7448,
     "longitude": -121.0890,
+    "timeZone": "America/Los_Angeles",
     "forecastElevationFt": 4500,
     "avalancheCenter": "NWAC",
     "observedSnow": {
@@ -55,6 +57,7 @@
     "kind": "skiArea",
     "latitude": 47.4245,
     "longitude": -121.4134,
+    "timeZone": "America/Los_Angeles",
     "forecastElevationFt": 3500,
     "avalancheCenter": "NWAC",
     "observedSnow": {
@@ -79,6 +82,7 @@
     "kind": "skiArea",
     "latitude": 46.9353,
     "longitude": -121.4747,
+    "timeZone": "America/Los_Angeles",
     "forecastElevationFt": 5500,
     "avalancheCenter": "NWAC",
     "observedSnow": {
@@ -103,9 +107,16 @@
     "kind": "skiArea",
     "latitude": 50.1150,
     "longitude": -122.9486,
+    "timeZone": "America/Vancouver",
     "forecastElevationFt": 5500,
     "avalancheCenter": null,
-    "observedSnow": null,
+    "observedSnow": {
+      "bcSnowStations": {
+        "stations": [
+          { "id": "3A20P", "name": "Callaghan Creek", "elevationFt": 3337 }
+        ]
+      }
+    },
     "links": [
       { "title": "Whistler Blackcomb", "url": "https://www.whistlerblackcomb.com" }
     ]
@@ -119,9 +130,10 @@
     "kind": "skiArea",
     "latitude": 50.9584,
     "longitude": -118.1636,
+    "timeZone": "America/Vancouver",
     "forecastElevationFt": 5500,
     "avalancheCenter": null,
-    "observedSnow": null,
+    "observedSnow": { "modeledOnly": {} },
     "links": [
       { "title": "Revelstoke Mountain Resort", "url": "https://www.revelstokemountainresort.com" }
     ]
@@ -135,9 +147,10 @@
     "kind": "skiArea",
     "latitude": 50.8838,
     "longitude": -119.8906,
+    "timeZone": "America/Vancouver",
     "forecastElevationFt": 5500,
     "avalancheCenter": null,
-    "observedSnow": null,
+    "observedSnow": { "modeledOnly": {} },
     "links": [
       { "title": "Sun Peaks Resort", "url": "https://www.sunpeaksresort.com" }
     ]

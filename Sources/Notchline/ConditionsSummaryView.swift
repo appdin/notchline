@@ -7,6 +7,7 @@ struct ConditionsSummaryView: View {
     let now: Date
 
     private var snapshot: ConditionsSnapshot? { model.snapshot }
+    private var units: UnitSystem { model.location.defaultUnits }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -46,8 +47,8 @@ struct ConditionsSummaryView: View {
     private var base: some View {
         MetricCell(
             title: snapshot?.observed?.isModeled == true ? "Base (modeled)" : "Base",
-            value: snapshot?.observed.map { ConditionsFormat.inches($0.depthInches) },
-            detail: snapshot?.observed.map { "\($0.stationName) \(ConditionsFormat.feet($0.stationElevationFt))" },
+            value: snapshot?.observed.map { ConditionsFormat.snow($0.depthInches, units) },
+            detail: snapshot?.observed.map { "\($0.stationName) \(ConditionsFormat.elevation($0.stationElevationFt, units))" },
             state: state(for: .observed))
     }
 
@@ -55,7 +56,7 @@ struct ConditionsSummaryView: View {
         let observed = snapshot?.observed
         return MetricCell(
             title: "Last 24h",
-            value: observed.map { $0.snow24hInches.map(ConditionsFormat.newSnow) ?? "–" },
+            value: observed.map { $0.snow24hInches.map { ConditionsFormat.newSnow($0, units) } ?? "–" },
             detail: observed.map { $0.snow24hInches == nil ? "no reading 24h ago" : "observed" },
             state: state(for: .observed))
     }
@@ -63,9 +64,9 @@ struct ConditionsSummaryView: View {
     private var next24h: some View {
         MetricCell(
             title: "Next 24h",
-            value: snapshot?.forecast.map { ConditionsFormat.newSnow($0.next24hInches) },
+            value: snapshot?.forecast.map { ConditionsFormat.newSnow($0.next24hInches, units) },
             detail: snapshot?.forecast.map { forecast in
-                forecast.gridElevationFt.map { "\(forecast.sourceName) grid \(ConditionsFormat.feet($0))" } ?? forecast.sourceName
+                forecast.gridElevationFt.map { "\(forecast.sourceName == "NWS" ? "NWS grid" : forecast.sourceName) \(ConditionsFormat.elevation($0, units))" } ?? forecast.sourceName
             },
             state: state(for: .forecast))
     }
@@ -75,7 +76,7 @@ struct ConditionsSummaryView: View {
         let fromStation = current?.isForecast == false
         return MetricCell(
             title: "Temp now",
-            value: current.map { ConditionsFormat.degrees($0.tempF) + "F" },
+            value: current.map { ConditionsFormat.degrees($0.tempF, units) + ConditionsFormat.temperatureScale(units) },
             detail: current.map { _ in
                 fromStation ? snapshot?.observed?.stationName ?? "station" : "\(snapshot?.forecast?.sourceName ?? "") forecast"
             },
@@ -84,11 +85,11 @@ struct ConditionsSummaryView: View {
 
     private var highLow: some View {
         let forecast = snapshot?.forecast
-        let tomorrow = forecast?.high.map { ConditionsFormat.highIsTomorrow($0, now: now) } ?? false
+        let tomorrow = forecast?.high.map { ConditionsFormat.highIsTomorrow($0, now: now, calendar: model.location.calendar) } ?? false
         let value: String? = forecast.flatMap { forecast in
             guard forecast.high != nil || forecast.low != nil else { return nil }
-            let high = forecast.high.map { ConditionsFormat.degrees($0.tempF) } ?? "–"
-            let low = forecast.low.map { ConditionsFormat.degrees($0.tempF) } ?? "–"
+            let high = forecast.high.map { ConditionsFormat.degrees($0.tempF, units) } ?? "–"
+            let low = forecast.low.map { ConditionsFormat.degrees($0.tempF, units) } ?? "–"
             return "\(high) / \(low)"
         }
         return MetricCell(
@@ -106,11 +107,11 @@ struct ConditionsSummaryView: View {
             windNow.directionDegrees.map { detail.append(ConditionsFormat.compass($0)) }
         }
         if let peak = forecast?.windPeak24h {
-            detail.append("peak \(ConditionsFormat.wind(peak))")
+            detail.append("peak \(ConditionsFormat.wind(peak, units))")
         }
         return MetricCell(
-            title: "Wind mph",
-            value: windNow.map(ConditionsFormat.wind),
+            title: "Wind \(ConditionsFormat.windUnit(units))",
+            value: windNow.map { ConditionsFormat.wind($0, units) },
             detail: windNow == nil ? nil : detail.joined(separator: " · "),
             state: state(for: .forecast))
     }
@@ -118,11 +119,11 @@ struct ConditionsSummaryView: View {
     @ViewBuilder
     private var avalanche: some View {
         let state = state(for: .avalanche)
-        if let danger = snapshot?.danger {
+        if let danger = snapshot?.danger(at: now) {
             HStack(alignment: .top, spacing: 8) {
                 DangerBadge(level: danger.overall)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(danger.zoneName): \(danger.overall.label)")
+                    Text("\(danger.zoneName): \(danger.isExpired(at: now) ? "forecast expired" : danger.overall.label)")
                         .font(.subheadline)
                     if let upper = danger.upper, let middle = danger.middle, let lower = danger.lower {
                         Text("Above TL \(upper.badgeText) · Near TL \(middle.badgeText) · Below TL \(lower.badgeText)")
@@ -134,22 +135,26 @@ struct ConditionsSummaryView: View {
                 }
             }
             .opacity(state.dimmed ? 0.45 : 1)
+            .help(state.help)
         } else {
             Label("Avalanche danger unavailable", systemImage: "exclamationmark.triangle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .help(state.error ?? "")
+                .help(state.help)
         }
     }
 
     private func state(for metric: Metric) -> MetricState {
-        guard let snapshot else { return MetricState(dimmed: false, age: nil, error: model.errors[metric]) }
+        guard let snapshot else {
+            return MetricState(dimmed: false, age: nil, error: model.errors[metric], warnings: model.warnings[metric] ?? [])
+        }
         let outdated = snapshot.isOutdated(metric, now: now)
         let showAge = outdated || snapshot.staleMetrics.contains(metric)
         return MetricState(
             dimmed: model.isShowingCached || outdated,
             age: showAge ? snapshot.valueDate(for: metric).map { ConditionsFormat.age(since: $0, now: now) } : nil,
-            error: model.errors[metric])
+            error: model.errors[metric],
+            warnings: model.warnings[metric] ?? [])
     }
 }
 
@@ -158,6 +163,12 @@ struct MetricState {
     /// Shown when the value is stale or outdated.
     var age: String?
     var error: String?
+    /// Problems worked around in the last refresh, shown as a tooltip.
+    var warnings: [String] = []
+
+    var help: String {
+        ([error].compactMap { $0 } + warnings).joined(separator: "\n")
+    }
 }
 
 struct MetricCell: View {
@@ -179,7 +190,7 @@ struct MetricCell: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .opacity(state.dimmed ? 0.45 : 1)
-        .help(state.error ?? "")
+        .help(state.help)
     }
 
     private var caption: String {

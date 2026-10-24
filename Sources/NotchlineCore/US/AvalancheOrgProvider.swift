@@ -27,8 +27,10 @@ public struct AvalancheOrgProvider: AvalancheProvider {
         }
         var summary = Self.summary(from: feature)
         // Elevation bands are a refinement. Without them the zone rating still stands.
-        if let product = try? await http.get(Self.productURL(center: center, zoneID: zone.id)) {
-            try? Self.applyBands(from: product, to: &summary, now: now)
+        do {
+            try Self.applyBands(from: try await http.get(Self.productURL(center: center, zoneID: zone.id)), to: &summary, now: now)
+        } catch {
+            ProviderWarnings.record("Elevation bands unavailable: \(error)")
         }
         return summary
     }
@@ -82,7 +84,6 @@ public struct AvalancheOrgProvider: AvalancheProvider {
         let product = try JSONDecoder().decode(Product.self, from: data)
         guard product.product_type == "forecast",
               let current = product.danger?.first(where: { $0.valid_day == "current" }) else { return }
-        if let expires = product.expires_time.flatMap(NWSForecastProvider.parseISODate), expires < now { return }
         summary.upper = DangerLevel(apiValue: current.upper)
         summary.middle = DangerLevel(apiValue: current.middle)
         summary.lower = DangerLevel(apiValue: current.lower)

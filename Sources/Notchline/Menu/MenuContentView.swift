@@ -85,9 +85,9 @@ struct MenuBarLabel: View {
     private var title: String {
         var parts = [model.location.shortName]
         if let depth = model.snapshot?.observed?.depthInches {
-            parts.append(ConditionsFormat.inches(depth))
+            parts.append(ConditionsFormat.snow(depth, model.location.defaultUnits))
         }
-        if let danger = model.snapshot?.danger?.overall, danger != .noRating {
+        if let danger = model.snapshot?.danger(at: Date())?.overall, danger != .noRating {
             parts.append("⚠\(danger.rawValue)")
         }
         return parts.joined(separator: " ")

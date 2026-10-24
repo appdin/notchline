@@ -10,9 +10,19 @@ public enum ConditionsFormat {
         return "\(Int(value.rounded()))\""
     }
 
-    /// `+8"`
-    public static func newSnow(_ value: Double) -> String {
-        "+" + inches(value)
+    /// Snow depth or amount from inches: `61"`, or `155 cm` in metric. One decimal below one unit.
+    public static func snow(_ inches: Double, _ units: UnitSystem = .imperial) -> String {
+        guard units == .metric else { return self.inches(inches) }
+        let cm = Convert.cm(fromInches: inches)
+        if cm > 0 && cm < 0.95 {
+            return String(format: "%.1f cm", cm)
+        }
+        return "\(Int(cm.rounded())) cm"
+    }
+
+    /// `+8"`, `+20 cm`
+    public static func newSnow(_ inches: Double, _ units: UnitSystem = .imperial) -> String {
+        "+" + snow(inches, units)
     }
 
     /// `4,040'`
@@ -20,17 +30,35 @@ public enum ConditionsFormat {
         value.formatted(.number.grouping(.automatic)) + "'"
     }
 
-    /// Whole degrees: `28°`, `-4°`
-    public static func degrees(_ value: Double) -> String {
+    /// Elevation from feet: `4,040'`, or `1,231 m` in metric.
+    public static func elevation(_ feet: Int, _ units: UnitSystem = .imperial) -> String {
+        guard units == .metric else { return self.feet(feet) }
+        return Int(Convert.meters(fromFeet: Double(feet)).rounded()).formatted(.number.grouping(.automatic)) + " m"
+    }
+
+    /// Whole degrees from °F, converted for metric: `28°`, `-4°`
+    public static func degrees(_ fahrenheit: Double, _ units: UnitSystem = .imperial) -> String {
+        let value = units == .metric ? Convert.celsius(fromF: fahrenheit) : fahrenheit
         let rounded = Int(value.rounded())
         return "\(rounded == 0 ? 0 : rounded)°"
     }
 
-    /// Sustained speed with gusts when there are any: `15 G30`, `5`
-    public static func wind(_ wind: Wind) -> String {
-        let sustained = Int(wind.sustainedMph.rounded())
-        guard let gust = wind.gustMph.map({ Int($0.rounded()) }), gust > sustained else { return "\(sustained)" }
+    /// `F` or `C`, to follow `degrees` where the scale needs saying.
+    public static func temperatureScale(_ units: UnitSystem) -> String {
+        units == .metric ? "C" : "F"
+    }
+
+    /// Sustained speed with gusts when there are any, from mph: `15 G30`, `5`, in km/h for metric.
+    public static func wind(_ wind: Wind, _ units: UnitSystem = .imperial) -> String {
+        let speed = { units == .metric ? Convert.kmh(fromMPH: $0) : $0 }
+        let sustained = Int(speed(wind.sustainedMph).rounded())
+        guard let gust = wind.gustMph.map({ Int(speed($0).rounded()) }), gust > sustained else { return "\(sustained)" }
         return "\(sustained) G\(gust)"
+    }
+
+    /// `mph` or `km/h`
+    public static func windUnit(_ units: UnitSystem) -> String {
+        units == .metric ? "km/h" : "mph"
     }
 
     /// 16-point compass direction the wind blows from: `SW`, `NNE`
@@ -40,9 +68,9 @@ public enum ConditionsFormat {
         return points[Int((normalized / 22.5).rounded()) % 16]
     }
 
-    /// True when the forecast high is for a later day than `now`, so it should read as tomorrow's.
-    public static func highIsTomorrow(_ high: ForecastTemp, now: Date, calendar: Calendar = .current) -> Bool {
-        high.period.start > now && !calendar.isDate(high.period.start, inSameDayAs: now)
+    /// True when the forecast high is for a later local day than `now` at the location, so it should read as tomorrow's.
+    public static func highIsTomorrow(_ high: ForecastTemp, now: Date, calendar: Calendar) -> Bool {
+        LocalTime.isLaterDay(high.period.start, than: now, calendar: calendar)
     }
 
     /// `just now`, `12 min ago`, `3 h ago`, `2 d ago`

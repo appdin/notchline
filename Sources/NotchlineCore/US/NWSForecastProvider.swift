@@ -32,7 +32,7 @@ public struct NWSForecastProvider: SnowForecastProvider {
         guard let snowfall = grid.snowfallAmount else {
             throw ProviderError.noData("snowfallAmount in NWS gridpoint")
         }
-        guard snowfall.uom == "wmoUnit:mm" else {
+        guard UnitCheck.matches(snowfall.uom, "wmoUnit:mm", field: "NWS snowfall") else {
             throw ProviderError.unexpectedResponse("snowfallAmount unit \(snowfall.uom)")
         }
         guard !snowfall.values.isEmpty else {
@@ -47,20 +47,25 @@ public struct NWSForecastProvider: SnowForecastProvider {
             totalMM += (entry.value ?? 0) * overlapFraction(interval, window)
         }
         let elevationFt = grid.elevation.flatMap { elevation in
-            elevation.value.map { Int((elevation.unitCode == "wmoUnit:m" ? $0 * 3.28084 : $0).rounded()) }
+            elevation.value.flatMap { meters in
+                UnitCheck.matches(elevation.unitCode, "wmoUnit:m", field: "NWS grid elevation")
+                    ? Int(Convert.feet(fromM: meters).rounded()) : nil
+            }
         }
-        let temperature = series(grid.temperature, unit: "wmoUnit:degC", convert: fahrenheit)
-        let windSpeed = series(grid.windSpeed, unit: "wmoUnit:km_h-1", convert: mph)
-        let windGust = series(grid.windGust, unit: "wmoUnit:km_h-1", convert: mph)
-        let windDirection = series(grid.windDirection, unit: "wmoUnit:degree_(angle)")
+        let fahrenheit = { Convert.fahrenheit(fromC: $0) }
+        let mph = { Convert.mph(fromKMH: $0) }
+        let temperature = series(grid.temperature, "temperature", unit: "wmoUnit:degC", convert: fahrenheit)
+        let windSpeed = series(grid.windSpeed, "windSpeed", unit: "wmoUnit:km_h-1", convert: mph)
+        let windGust = series(grid.windGust, "windGust", unit: "wmoUnit:km_h-1", convert: mph)
+        let windDirection = series(grid.windDirection, "windDirection", unit: "wmoUnit:degree_(angle)")
         return SnowForecast(
-            next24hInches: totalMM / 25.4,
+            next24hInches: Convert.inches(fromMM: totalMM),
             issuedAt: grid.updateTime.flatMap(parseISODate),
             gridElevationFt: elevationFt,
             sourceName: "NWS",
             tempNowF: value(in: temperature, at: now),
-            high: notEnded(series(grid.maxTemperature, unit: "wmoUnit:degC", convert: fahrenheit), now: now),
-            low: notEnded(series(grid.minTemperature, unit: "wmoUnit:degC", convert: fahrenheit), now: now),
+            high: notEnded(series(grid.maxTemperature, "maxTemperature", unit: "wmoUnit:degC", convert: fahrenheit), now: now),
+            low: notEnded(series(grid.minTemperature, "minTemperature", unit: "wmoUnit:degC", convert: fahrenheit), now: now),
             windNow: value(in: windSpeed, at: now).map {
                 Wind(sustainedMph: $0, gustMph: value(in: windGust, at: now), directionDegrees: value(in: windDirection, at: now))
             },
@@ -74,9 +79,9 @@ public struct NWSForecastProvider: SnowForecastProvider {
     }
 
     /// A gridpoint layer's values with parsed intervals. nil when the layer is missing, empty or in another unit,
-    /// which leaves that field blank rather than failing the snowfall forecast.
-    static func series(_ layer: Gridpoint.Layer?, unit: String, convert: (Double) -> Double = { $0 }) -> [TimedValue]? {
-        guard let layer, layer.uom == unit else { return nil }
+    /// which leaves that field blank rather than failing the snowfall forecast. A unit mismatch is recorded.
+    static func series(_ layer: Gridpoint.Layer?, _ name: String, unit: String, convert: (Double) -> Double = { $0 }) -> [TimedValue]? {
+        guard let layer, UnitCheck.matches(layer.uom, unit, field: "NWS \(name)") else { return nil }
         let values = layer.values.compactMap { entry -> TimedValue? in
             guard let value = entry.value, let interval = parseValidTime(entry.validTime) else { return nil }
             return TimedValue(interval: interval, value: convert(value))
@@ -97,9 +102,6 @@ public struct NWSForecastProvider: SnowForecastProvider {
     static func notEnded(_ series: [TimedValue]?, now: Date) -> ForecastTemp? {
         series?.first { $0.interval.end > now }.map { ForecastTemp(tempF: $0.value, period: $0.interval) }
     }
-
-    static func fahrenheit(_ celsius: Double) -> Double { celsius * 9 / 5 + 32 }
-    static func mph(_ kmh: Double) -> Double { kmh / 1.609344 }
 
     struct TimedValue: Equatable {
         let interval: DateInterval

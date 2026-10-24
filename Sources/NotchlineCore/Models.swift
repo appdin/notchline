@@ -176,6 +176,34 @@ public struct DangerSummary: Codable, Equatable, Sendable {
     }
 }
 
+extension DangerSummary {
+    /// The one expiry rule for every avalanche center: once `validUntil` has passed and no newer
+    /// forecast has replaced it, the rating no longer describes current conditions.
+    public func isExpired(at now: Date) -> Bool {
+        validUntil.map { now > $0 } ?? false
+    }
+
+    /// This summary as it applies at `now`: unchanged while valid, no rating once expired. Zone,
+    /// dates and forecast link are kept so the UI can say which forecast expired.
+    public func current(at now: Date) -> DangerSummary {
+        guard isExpired(at: now) else { return self }
+        var summary = self
+        summary.overall = .noRating
+        summary.upper = nil
+        summary.middle = nil
+        summary.lower = nil
+        return summary
+    }
+}
+
+extension ConditionsSnapshot {
+    /// The avalanche danger with the expiry rule applied. Views read this rather than `danger`,
+    /// so a cached snapshot never shows an expired rating as current.
+    public func danger(at now: Date) -> DangerSummary? {
+        danger?.current(at: now)
+    }
+}
+
 /// North American Public Avalanche Danger Scale.
 public enum DangerLevel: Int, Codable, Comparable, Sendable {
     case noRating = 0, low = 1, moderate = 2, considerable = 3, high = 4, extreme = 5

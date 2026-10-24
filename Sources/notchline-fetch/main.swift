@@ -32,9 +32,7 @@ if wantsJSON {
     exit(0)
 }
 
-func inches(_ value: Double?) -> String {
-    value.map { String(format: "%.1f\"", $0) } ?? "-"
-}
+let units = location.defaultUnits
 
 func age(_ date: Date?) -> String {
     guard let date else { return "" }
@@ -48,37 +46,41 @@ func failure(_ metric: Metric) -> String {
 
 print(location.name)
 if let observed = snapshot.observed {
-    print("  Base       \(inches(observed.depthInches))  \(observed.stationName) \(observed.stationElevationFt)', \(age(observed.observedAt))")
-    print("  Last 24h   \(observed.snow24hInches.map { "+" + inches($0) } ?? "no reading 24h ago")")
+    let modeled = observed.isModeled ? " (modeled)" : ""
+    print("  Base       \(ConditionsFormat.snow(observed.depthInches, units))\(modeled)  \(observed.stationName) \(ConditionsFormat.elevation(observed.stationElevationFt, units)), \(age(observed.observedAt))")
+    print("  Last 24h   \(observed.snow24hInches.map { ConditionsFormat.newSnow($0, units) } ?? "no reading 24h ago")")
 } else {
     print("  Base       \(failure(.observed))")
     print("  Last 24h   \(failure(.observed))")
 }
 if let forecast = snapshot.forecast {
-    let grid = forecast.gridElevationFt.map { " grid \($0)'" } ?? ""
-    print("  Next 24h   +\(inches(forecast.next24hInches))  \(forecast.sourceName)\(grid), issued \(age(forecast.issuedAt))")
+    let grid = forecast.gridElevationFt.map { (forecast.sourceName == "NWS" ? " grid " : " ") + ConditionsFormat.elevation($0, units) } ?? ""
+    let issued = forecast.issuedAt.map { ", issued \(age($0))" } ?? ""
+    print("  Next 24h   \(ConditionsFormat.newSnow(forecast.next24hInches, units))  \(forecast.sourceName)\(grid)\(issued)")
 } else {
     print("  Next 24h   \(failure(.forecast))")
 }
 if let current = snapshot.currentTemp(now: Date()) {
     let source = current.isForecast ? "\(snapshot.forecast?.sourceName ?? "") forecast" : snapshot.observed?.stationName ?? ""
-    print("  Temp now   \(ConditionsFormat.degrees(current.tempF))F  \(source)")
+    print("  Temp now   \(ConditionsFormat.degrees(current.tempF, units))\(ConditionsFormat.temperatureScale(units))  \(source)")
 } else {
     print("  Temp now   unavailable")
 }
 if let forecast = snapshot.forecast {
-    let high = forecast.high.map { (ConditionsFormat.highIsTomorrow($0, now: Date()) ? "tomorrow " : "") + ConditionsFormat.degrees($0.tempF) } ?? "-"
-    print("  High/Low   \(high) / \(forecast.low.map { ConditionsFormat.degrees($0.tempF) } ?? "-")")
+    let high = forecast.high.map { (ConditionsFormat.highIsTomorrow($0, now: Date(), calendar: location.calendar) ? "tomorrow " : "") + ConditionsFormat.degrees($0.tempF, units) } ?? "-"
+    print("  High/Low   \(high) / \(forecast.low.map { ConditionsFormat.degrees($0.tempF, units) } ?? "-")")
     if let wind = forecast.windNow {
         let direction = wind.directionDegrees.map { " from " + ConditionsFormat.compass($0) } ?? ""
-        let peak = forecast.windPeak24h.map { ", next 24h peak \(ConditionsFormat.wind($0)) mph" } ?? ""
-        print("  Wind       \(ConditionsFormat.wind(wind)) mph\(direction)\(peak)")
+        let unit = ConditionsFormat.windUnit(units)
+        let peak = forecast.windPeak24h.map { ", next 24h peak \(ConditionsFormat.wind($0, units)) \(unit)" } ?? ""
+        print("  Wind       \(ConditionsFormat.wind(wind, units)) \(unit)\(direction)\(peak)")
     } else {
         print("  Wind       unavailable")
     }
 }
-if let danger = snapshot.danger {
-    let rating = danger.overall == .noRating ? danger.overall.label : "\(danger.overall.label) (\(danger.overall.rawValue))"
+if let danger = snapshot.danger(at: Date()) {
+    let rating = danger.isExpired(at: Date()) ? "forecast expired"
+        : danger.overall == .noRating ? danger.overall.label : "\(danger.overall.label) (\(danger.overall.rawValue))"
     print("  Avalanche  \(danger.zoneName): \(rating)")
     if let upper = danger.upper, let middle = danger.middle, let lower = danger.lower {
         print("             Above TL \(upper.rawValue) · Near TL \(middle.rawValue) · Below TL \(lower.rawValue)")
@@ -86,4 +88,9 @@ if let danger = snapshot.danger {
     if let url = danger.forecastURL { print("             \(url.absoluteString)") }
 } else {
     print("  Avalanche  \(failure(.avalanche))")
+}
+
+let warningLines = Metric.allCases.flatMap { metric in (result.warnings[metric] ?? []).map { "  ! \(metric.rawValue): \($0)" } }
+if !warningLines.isEmpty {
+    print(warningLines.joined(separator: "\n"))
 }

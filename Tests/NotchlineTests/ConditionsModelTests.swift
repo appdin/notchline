@@ -145,10 +145,15 @@ struct SnapshotFreshnessTests {
     }
 
     @Test func notConfiguredSourcesAreNotRetryable() async throws {
+        let json = """
+        {"id":"test","name":"Test","shortName":"Test","country":"us","region":"WA","kind":"peak",
+         "latitude":48.8,"longitude":-121.7,"forecastElevationFt":4000,"timeZone":"America/Los_Angeles","avalancheCenter":null,"observedSnow":null,"links":[]}
+        """
+        let location = try JSONDecoder().decode(Location.self, from: Data(json.utf8))
         let service = ConditionsService(factory: ProviderFactory(http: StubHTTPClient([])))
-        let result = await service.refresh(try catalogLocation("whistler"), now: now)
-        #expect(result.failedMetrics.isEmpty)
+        let result = await service.refresh(location, now: now)
         #expect(result.errors.count == 3)
+        #expect(result.failedMetrics == [.forecast])
     }
 }
 
@@ -165,6 +170,25 @@ struct ConditionsFormatTests {
         #expect(ConditionsFormat.compass(225) == "SW")
         #expect(ConditionsFormat.compass(359) == "N")
         #expect(ConditionsFormat.compass(20) == "NNE")
+    }
+
+    @Test func metricUnits() {
+        #expect(ConditionsFormat.snow(61, .metric) == "155 cm")
+        #expect(ConditionsFormat.snow(0.2, .metric) == "0.5 cm")
+        #expect(ConditionsFormat.newSnow(8, .metric) == "+20 cm")
+        #expect(ConditionsFormat.newSnow(8) == "+8\"")
+        #expect(ConditionsFormat.elevation(3337, .metric) == "1,017 m")
+        #expect(ConditionsFormat.elevation(4040) == "4,040'")
+        #expect(ConditionsFormat.degrees(28, .metric) == "-2°")
+        #expect(ConditionsFormat.degrees(32.5, .metric) == "0°")
+        #expect(ConditionsFormat.wind(Wind(sustainedMph: 15, gustMph: 30), .metric) == "24 G48")
+        #expect(ConditionsFormat.windUnit(.metric) == "km/h")
+        #expect(ConditionsFormat.temperatureScale(.metric) == "C")
+    }
+
+    @Test func unitsDefaultByCountry() throws {
+        #expect(try catalogLocation("mt-baker").defaultUnits == .imperial)
+        #expect(try catalogLocation("whistler").defaultUnits == .metric)
     }
 
     @Test func highIsTomorrowOnlyForALaterDay() {
