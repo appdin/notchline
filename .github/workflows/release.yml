@@ -1,0 +1,90 @@
+# Builds Notchline.app for a v* tag, publishes it as a GitHub release and points the Homebrew
+# cask and formula in this repo at it.
+#
+# Developer ID signing and notarization run when these repository secrets are set. Without them
+# the app is signed ad hoc and Gatekeeper blocks the first launch (see README).
+#   MACOS_CERTIFICATE           base64 of a Developer ID Application .p12
+#   MACOS_CERTIFICATE_PASSWORD  password for the .p12
+#   APPLE_ID, APPLE_TEAM_ID     Apple account and team used for notarization
+#   APPLE_APP_PASSWORD          app-specific password for that Apple account
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: swift test
+
+      - name: Import Developer ID certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
+          test -n "$identity" || { echo "No Developer ID Application identity in MACOS_CERTIFICATE"; exit 1; }
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "NOTARIZE=1" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          make release SIGN_IDENTITY="${SIGN_IDENTITY:--}" NOTARIZE="${NOTARIZE:-0}" \
+            VERSION="$VERSION" BUILD_NUMBER="$GITHUB_RUN_NUMBER"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "build/Notchline-$VERSION.zip" \
+            --title "Notchline $VERSION" --generate-notes
+
+      - name: Update Homebrew cask and formula
+        run: |
+          app_sha="$(shasum -a 256 "build/Notchline-$VERSION.zip" | cut -d ' ' -f 1)"
+          source_url="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$GITHUB_REF_NAME.tar.gz"
+          source_sha="$(curl -fsSL "$source_url" | shasum -a 256 | cut -d ' ' -f 1)"
+          git checkout main
+          git pull --ff-only origin main
+          sed -E -i '' \
+            -e "s|^  version \".*\"|  version \"$VERSION\"|" \
+            -e "s|^  sha256 \".*\"|  sha256 \"$app_sha\"|" \
+            Casks/notchline.rb
+          sed -E -i '' \
+            -e "s|^  url \".*\"|  url \"$source_url\"|" \
+            -e "s|^  sha256 \".*\"|  sha256 \"$source_sha\"|" \
+            Formula/notchline.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Homebrew: Notchline $VERSION"
+          git push origin main

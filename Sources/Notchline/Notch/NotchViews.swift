@@ -9,7 +9,7 @@ struct NotchCompactLeadingView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             HStack(spacing: 4) {
                 Image(systemName: "snowflake")
-                Text(model.snapshot?.observed.map { ConditionsFormat.snow($0.depthInches, model.location.defaultUnits) } ?? "–")
+                Text(model.snapshot?.observed.map { ConditionsFormat.snow($0.depthInches, model.units) } ?? "–")
                     .monospacedDigit()
             }
             .font(.system(size: 13, weight: .semibold))
@@ -27,7 +27,7 @@ struct NotchCompactTrailingView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             HStack(spacing: 6) {
                 if let current = model.snapshot?.currentTemp(now: context.date) {
-                    Text(ConditionsFormat.degrees(current.tempF, model.location.defaultUnits))
+                    Text(ConditionsFormat.degrees(current.tempF, model.units))
                         .monospacedDigit()
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)

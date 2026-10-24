@@ -7,7 +7,7 @@ struct ConditionsSummaryView: View {
     let now: Date
 
     private var snapshot: ConditionsSnapshot? { model.snapshot }
-    private var units: UnitSystem { model.location.defaultUnits }
+    private var units: UnitSystem { model.units }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

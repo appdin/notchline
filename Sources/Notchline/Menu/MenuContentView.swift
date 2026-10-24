@@ -45,6 +45,7 @@ struct MenuContentView: View {
         }
     }
 
+    @ViewBuilder
     private var actions: some View {
         HStack {
             Button {
@@ -62,6 +63,11 @@ struct MenuContentView: View {
                     Label("Avalanche forecast", systemImage: "arrow.up.right.square")
                 }
             }
+        }
+        HStack {
+            Button("Settings…") { appState.showSettings() }
+                .keyboardShortcut(",")
+            Button("About") { appState.showAbout() }
 
             Spacer()
 
@@ -71,21 +77,24 @@ struct MenuContentView: View {
     }
 }
 
-/// Menu bar title: short name plus base depth and danger, for example `Baker 61" 3`.
+/// Menu bar title: short name plus base depth and danger, for example `Baker 61" ⚠3`, or just the snowflake.
 struct MenuBarLabel: View {
     @ObservedObject var model: ConditionsModel
+    let style: MenuBarTitleStyle
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "snowflake")
-            Text(title)
+            if style == .conditions {
+                Text(title)
+            }
         }
     }
 
     private var title: String {
         var parts = [model.location.shortName]
         if let depth = model.snapshot?.observed?.depthInches {
-            parts.append(ConditionsFormat.snow(depth, model.location.defaultUnits))
+            parts.append(ConditionsFormat.snow(depth, model.units))
         }
         if let danger = model.snapshot?.danger(at: Date())?.overall, danger != .noRating {
             parts.append("⚠\(danger.rawValue)")

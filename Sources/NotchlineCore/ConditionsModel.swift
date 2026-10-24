@@ -15,6 +15,10 @@ public final class ConditionsModel: ObservableObject {
     /// True while `snapshot` comes from the cache and the location has not been refreshed this session.
     @Published public private(set) var isShowingCached = false
     @Published public private(set) var isRefreshing = false
+    /// Units picked in Settings. Views read `units`, which resolves automatic for the selected location.
+    @Published public var unitPreference: UnitPreference = .automatic
+
+    public var units: UnitSystem { unitPreference.resolve(for: location) }
 
     private let service: ConditionsService
     private let store: SnapshotStore?

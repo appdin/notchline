@@ -43,7 +43,7 @@ extension Location {
         return calendar
     }
 
-    /// Imperial in the US, metric in Canada. Settings can override this in Phase 7.
+    /// Imperial in the US, metric in Canada. `UnitPreference` can override this.
     public var defaultUnits: UnitSystem {
         country == .us ? .imperial : .metric
     }

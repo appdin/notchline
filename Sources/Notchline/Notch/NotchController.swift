@@ -14,6 +14,8 @@ final class NotchController {
     private static let expandDelay: Duration = .milliseconds(150)
     /// Grace period after the pointer leaves, so brief exits at the edge do not collapse it.
     private static let collapseDelay: Duration = .milliseconds(350)
+    /// How long a new snow alert keeps the notch expanded.
+    private static let alertDuration: Duration = .seconds(6)
 
     private let notch: Notch
     private var isPinned = false
@@ -56,6 +58,26 @@ final class NotchController {
                 await showCompact()
             } else {
                 await notch.hide()
+            }
+        }
+    }
+
+    /// New snow alert: expand for a few seconds, then go back to compact (or hide when not pinned).
+    /// Hovering while pinned takes over; otherwise the notch stays open until the pointer leaves.
+    func showAlert() {
+        hoverTask?.cancel()
+        hoverTask = Task { [weak self] in
+            guard let self else { return }
+            await self.notch.expand(on: self.screen)
+            try? await Task.sleep(for: Self.alertDuration)
+            while !Task.isCancelled && self.notch.isHovering {
+                try? await Task.sleep(for: Self.collapseDelay)
+            }
+            guard !Task.isCancelled else { return }
+            if self.isPinned {
+                await self.showCompact()
+            } else {
+                await self.notch.hide()
             }
         }
     }

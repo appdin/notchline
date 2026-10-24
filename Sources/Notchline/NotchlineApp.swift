@@ -10,7 +10,7 @@ struct NotchlineApp: App {
         MenuBarExtra {
             MenuContentView(appState: appState, model: appState.model)
         } label: {
-            MenuBarLabel(model: appState.model)
+            MenuBarLabel(model: appState.model, style: appState.menuBarTitle)
         }
         .menuBarExtraStyle(.window)
     }
