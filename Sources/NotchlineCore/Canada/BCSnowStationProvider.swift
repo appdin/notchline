@@ -9,7 +9,7 @@ import Foundation
 public struct BCSnowStationProvider: ObservedSnowProvider {
     static let baseURL = URL(string: "https://www.env.gov.bc.ca/wsd/data_searches/snow/asws/data/")!
     /// Snow depth in cm. The files do not label their units, so cm and °C are assumptions taken
-    /// from the BC ENV data documentation and checked against known depths in Phase 6.
+    /// from the BC ENV data documentation and checked against known depths.
     static let depthFile = "SD.csv"
     /// Air temperature in °C.
     static let temperatureFile = "TA.csv"
