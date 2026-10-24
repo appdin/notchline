@@ -17,7 +17,7 @@ For the selected location, at a glance in the notch:
 | Wind next 24h | Peak sustained speed and peak gust forecast over the next 24 hours, with direction at the peak |
 | Avalanche | Current backcountry avalanche danger for the forecast zone containing the location |
 
-Compact notch view example: `❄ 61" · +8" / +12" · ⚠ 3`. Temperature and wind are in the expanded view and menu, not the compact view, which has little room beside the notch.
+Compact notch view example: `❄ 61"` left of the notch, `28° ③` right of it (current temperature and danger badge). Snowfall, high/low and wind are in the expanded view and menu.
 Expanded view: each metric with label, units, data age and source, danger by elevation band, and links to the full avalanche forecast and station page.
 
 The user picks the location from a list. Mt. Baker is the default and the first one built end to end.
@@ -154,7 +154,7 @@ struct ConditionsSnapshot: Codable, Equatable {
     var observed: ObservedSnow?       // depthInches, snow24hInches?, observedAt, stationName, stationElevationFt, isModeled,
                                       // airTempF?, airTempObservedAt?
     var forecast: SnowForecast?       // next24hInches, issuedAt, gridElevationFt, sourceName,
-                                      // tempNowF?, highF?, highIsTomorrow, lowF?, windNow?, windPeak24h?
+                                      // tempNowF?, high?, low? (ForecastTemp: tempF, period), windNow?, windPeak24h?
     // Wind: sustainedMph, gustMph?, directionDegrees?
     var danger: DangerSummary?        // zoneName, overall, upper/middle/lower, issuedAt, validUntil, forecastURL
     var staleMetrics: Set<Metric>     // failed this refresh; value carried over from the previous snapshot
@@ -187,8 +187,8 @@ Notes:
 
 Temperature and wind come from the same gridpoint response (all values in metric units, converted for display):
 - `temperature` (`degC`, hourly or multi-hour intervals): the interval containing `now` gives `tempNowF`.
-- `maxTemperature` (`degC`, one daytime interval per day, for example `T15:00:00+00:00/PT13H`): `highF` is the interval that has not ended yet, with `highIsTomorrow` set when it starts on a later local date than `now`.
-- `minTemperature` (`degC`, one overnight interval per day): `lowF` is the interval that has not ended yet.
+- `maxTemperature` (`degC`, one daytime interval per day, for example `T15:00:00+00:00/PT13H`): `high` is the interval that has not ended yet. It is shown as tomorrow's when it starts on a later local date than now.
+- `minTemperature` (`degC`, one overnight interval per day): `low` is the interval that has not ended yet.
 - `windSpeed` and `windGust` (`km_h-1`) and `windDirection` (degrees, the direction the wind blows from): the intervals containing `now` give `windNow`. `windPeak24h` is the highest `windSpeed` and highest `windGust` overlapping `[now, now + 24h]`, each taken independently, with the direction at the peak sustained speed.
 - A missing or empty series leaves that field nil. It does not fail the forecast, which stays tied to snowfall.
 
@@ -263,7 +263,7 @@ The floating style has no compact state (`compact()` hides the window), so on a 
 - Own one `DynamicNotch` instance for the app lifetime.
 - If "Pin to notch" is enabled, show the compact state on launch:
   - Compact leading: snowflake SF Symbol + base depth (`61"`)
-  - Compact trailing: danger badge in the standard danger scale colors (1 green, 2 yellow, 3 orange, 4 red, 5 black), or a gray dash for no rating
+  - Compact trailing: current temperature (`28°`), then the danger badge in the standard danger scale colors (1 green, 2 yellow, 3 orange, 4 red, 5 black), or a gray dash for no rating
 - Expand to `ExpandedView` on hover, return to compact on hover exit.
 - Optional alert: when a refresh shows new 24h snow over a threshold (default 6"), auto expand for a few seconds, then return to compact.
 - Feed views from `AppState` via `@ObservedObject`, so refreshes and location changes update the notch without rebuilding it.
@@ -274,12 +274,13 @@ Mt. Baker Ski Area                              updated 12 min ago
   Base         Last 24h       Next 24h
   61"           +8"           +12"
   Heather Meadows 4,210'       NWS grid 4,350'
-  28°F now · High 31° · Low 22°
-  Wind SW 15 G 30 mph · next 24h to 25 G 45
+  Temp now      High / Low     Wind mph
+  28°F          31° / 22°      15 G30
+  Wells Creek   forecast       SW · peak 25 G45
   Avalanche · West Slopes North: Considerable (3)
     Above TL 3 · Near TL 3 · Below TL 2           [Forecast ↗]
 ```
-Show a small "modeled" tag next to Base when `baseDepthIsModeled` is true, and a "forecast" tag next to the current temperature when it is not a station reading. "High" reads "Tomorrow" when `highIsTomorrow`. Gusts are omitted when the source has none. Raise the height to roughly 190 pt for the two extra rows.
+Show a small "modeled" tag next to Base when `baseDepthIsModeled` is true, and a "forecast" tag next to the current temperature when it is not a station reading. Whether the high is tomorrow's is decided at display time from its period start, so a cached snapshot stays correct. Gusts are omitted when the source has none. Where the high is tomorrow's, its title reads "Tmrw high / Low".
 
 ## Menu bar
 
@@ -349,8 +350,8 @@ Done when: all four WA locations show live data for all four metrics.
 
 ### Phase 5: Temperature and wind (Washington)
 - Add `TOBS` to the SNOTEL request and parse air temperature alongside depth.
-- Parse `temperature`, `maxTemperature`, `minTemperature`, `windSpeed`, `windGust` and `windDirection` from the NWS gridpoint. Recapture the trimmed gridpoint fixture with these series, plus an in-season one with wind and a freezing high/low.
-- Add the fields to the model, the expanded notch view, the menu dropdown and `notchline-fetch`. Display in °F and mph until Phase 7 adds units.
+- Parse `temperature`, `maxTemperature`, `minTemperature`, `windSpeed`, `windGust` and `windDirection` from the NWS gridpoint. Recapture the trimmed gridpoint fixture with these series. NWS keeps no archive of gridpoint forecasts, so in-season cases (freezing high/low, strong wind) are built in the tests.
+- Add the fields to the model, the compact notch view (current temperature), the expanded notch view, the menu dropdown and `notchline-fetch`. Display in °F and mph until Phase 7 adds units.
 - Snapshots saved before this phase decode with the new fields nil.
 
 Done when: all four WA locations show current temperature (station where available), high and low, current wind and the 24h wind peak, with gusts, in the expanded view and menu.

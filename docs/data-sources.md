@@ -50,6 +50,12 @@ No readings were rejected as spikes in that period.
 - **Stevens Pass**: 791 reported every hour all winter. Off-season it logs depth only every few hours (temperature stays hourly), which is why it looked down on 2026-10-24. The off-season reading is shown with its age rather than blanked. Candidate fallbacks were rejected: Fish Lake `478:WA:SNTL` (3,440 ft, 23 km) is east of the crest and read about two thirds of Stevens Pass depth, and Icicle Creek `1338:WA:SNTL` has no depth sensor.
 - **Crystal**: both stations drop hours during heavy snow, Morse Lake most in early January (some days had one reading, with QC flag `K`). Cayuse Pass covered most of those gaps.
 
+### Air temperature (Phase 5)
+
+`TOBS` is requested in the same call (`elements=SNWD,TOBS`). It is hourly °F at every WA station used, and stays hourly off-season while `SNWD` goes sporadic (Stevens Pass on 2026-10-24: 30 `TOBS` readings and 8 `SNWD` readings in the window). Suspect and null values are dropped, as are jumps over 15 °F/hour. The latest reading comes from the station that supplied the depth. The app shows it when it is no more than 2 hours old, otherwise the NWS forecast for the current hour.
+
+On 2026-10-24 the AWDB API alternated between 1 second responses and requests that hung past 40 seconds, with or without `TOBS`. The 15 second timeout turns these into a stale observed metric until the next refresh.
+
 ## Observed snow: NWAC telemetry (not used)
 
 NWAC has no documented public API. Station pages at `https://nwac.us/weather/stations/<slug>` (for example `mt-baker-ski-area`) are server-rendered Next.js pages. The table data is embedded in the page payload and the site's client uses an access token embedded in the page to call its data backend. NWAC station IDs (`stid`) are small integers (Mt. Baker ski area is `5`).
@@ -62,6 +68,8 @@ Station page slugs seen: alpental, mt-baker-ski-area, stevens-pass-brooks, steve
 
 1. `GET https://api.weather.gov/points/{lat},{lon}` returns `properties.forecastGridData`. Memoized per location for a day.
 2. `GET <forecastGridData>` returns `properties.snowfallAmount` with `uom: "wmoUnit:mm"` and `values: [{ validTime: "2026-10-24T12:00:00+00:00/PT6H", value: 0 }]`. Also `properties.elevation` (`wmoUnit:m`) and `properties.updateTime`.
+
+Temperature and wind come from the same response: `temperature`, `maxTemperature` and `minTemperature` in `wmoUnit:degC`, `windSpeed` and `windGust` in `wmoUnit:km_h-1`, and `windDirection` in `wmoUnit:degree_(angle)` (direction the wind blows from). Intervals vary in length (`PT1H` to `PT4H` for wind, `PT13H` daytime for max, `PT14H` overnight for min). SNOTEL wind is not used: only Wells Creek and Cayuse Pass have wind sensors, in sheltered sites.
 
 The full gridpoint response is about 200 KB. The fixture is trimmed to the fields Notchline reads. The avalanche product fixtures are trimmed the same way, dropping forecast text, photos and author names.
 

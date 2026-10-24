@@ -19,14 +19,24 @@ struct NotchCompactLeadingView: View {
     }
 }
 
-/// Right of the notch: the overall avalanche danger badge, or a gray dash for no rating.
+/// Right of the notch: current temperature and the overall avalanche danger badge, or a gray dash for no rating.
 struct NotchCompactTrailingView: View {
     @ObservedObject var model: ConditionsModel
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            DangerBadge(level: model.snapshot?.danger?.overall ?? .noRating)
-                .opacity(isDimmed(.avalanche, model: model, now: context.date) ? 0.5 : 1)
+            HStack(spacing: 6) {
+                if let current = model.snapshot?.currentTemp(now: context.date) {
+                    Text(ConditionsFormat.degrees(current.tempF))
+                        .monospacedDigit()
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize()
+                        .opacity(isDimmed(current.isForecast ? .forecast : .observed, model: model, now: context.date) ? 0.5 : 1)
+                }
+                DangerBadge(level: model.snapshot?.danger?.overall ?? .noRating)
+                    .opacity(isDimmed(.avalanche, model: model, now: context.date) ? 0.5 : 1)
+            }
         }
     }
 }

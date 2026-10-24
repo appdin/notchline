@@ -1,7 +1,7 @@
 import NotchlineCore
 import SwiftUI
 
-/// Header, the three snow metrics and the avalanche summary for the selected location.
+/// Header, the snow, temperature and wind metrics and the avalanche summary for the selected location.
 struct ConditionsSummaryView: View {
     @ObservedObject var model: ConditionsModel
     let now: Date
@@ -15,6 +15,11 @@ struct ConditionsSummaryView: View {
                 base
                 last24h
                 next24h
+            }
+            HStack(alignment: .top, spacing: 16) {
+                tempNow
+                highLow
+                wind
             }
             avalanche
         }
@@ -62,6 +67,51 @@ struct ConditionsSummaryView: View {
             detail: snapshot?.forecast.map { forecast in
                 forecast.gridElevationFt.map { "\(forecast.sourceName) grid \(ConditionsFormat.feet($0))" } ?? forecast.sourceName
             },
+            state: state(for: .forecast))
+    }
+
+    private var tempNow: some View {
+        let current = snapshot?.currentTemp(now: now)
+        let fromStation = current?.isForecast == false
+        return MetricCell(
+            title: "Temp now",
+            value: current.map { ConditionsFormat.degrees($0.tempF) + "F" },
+            detail: current.map { _ in
+                fromStation ? snapshot?.observed?.stationName ?? "station" : "\(snapshot?.forecast?.sourceName ?? "") forecast"
+            },
+            state: state(for: fromStation ? .observed : .forecast))
+    }
+
+    private var highLow: some View {
+        let forecast = snapshot?.forecast
+        let tomorrow = forecast?.high.map { ConditionsFormat.highIsTomorrow($0, now: now) } ?? false
+        let value: String? = forecast.flatMap { forecast in
+            guard forecast.high != nil || forecast.low != nil else { return nil }
+            let high = forecast.high.map { ConditionsFormat.degrees($0.tempF) } ?? "–"
+            let low = forecast.low.map { ConditionsFormat.degrees($0.tempF) } ?? "–"
+            return "\(high) / \(low)"
+        }
+        return MetricCell(
+            title: tomorrow ? "Tmrw high / Low" : "High / Low",
+            value: value,
+            detail: value == nil ? nil : "forecast",
+            state: state(for: .forecast))
+    }
+
+    private var wind: some View {
+        let forecast = snapshot?.forecast
+        let windNow = forecast?.windNow
+        var detail: [String] = []
+        if let windNow {
+            windNow.directionDegrees.map { detail.append(ConditionsFormat.compass($0)) }
+        }
+        if let peak = forecast?.windPeak24h {
+            detail.append("peak \(ConditionsFormat.wind(peak))")
+        }
+        return MetricCell(
+            title: "Wind mph",
+            value: windNow.map(ConditionsFormat.wind),
+            detail: windNow == nil ? nil : detail.joined(separator: " · "),
             state: state(for: .forecast))
     }
 

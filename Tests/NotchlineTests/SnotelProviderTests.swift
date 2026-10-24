@@ -23,6 +23,35 @@ struct SnotelProviderTests {
         #expect(observed.snow24hInches == 0)
     }
 
+    @Test func airTemperatureFromSameStation() throws {
+        // Captured with now = 2026-10-24 14:00 PST. Latest TOBS is 13:00 PST.
+        let observed = try SnotelProvider.parse(
+            Fixture.data("snotel_909_temp_2026-10-24"), station: wellsCreek, now: date("2026-10-24T22:00:00Z"))
+        #expect(observed.depthInches == 0)
+        #expect(observed.airTempF == 33.6)
+        #expect(observed.airTempObservedAt == date("2026-10-24T21:00:00Z"))
+    }
+
+    @Test func stevensPassTemperatureStaysCurrentWhenDepthIsSporadic() async throws {
+        let location = try catalogLocation("stevens-pass")
+        let http = StubHTTPClient([("791:WA:SNTL", .success(try Fixture.data("snotel_791_temp_2026-10-24")))])
+        let now = date("2026-10-24T22:00:00Z")
+        let observed = try await SnotelProvider(http: http).fetch(for: location, now: now)
+        #expect(observed.observedAt == date("2026-10-24T12:00:00Z"))
+        #expect(observed.airTempF == 41.9)
+        let snapshot = ConditionsSnapshot(locationID: location.id, observed: observed, fetchedAt: now)
+        #expect(snapshot.currentTemp(now: now) == CurrentTemp(tempF: 41.9, isForecast: false))
+    }
+
+    @Test func temperatureGlitchesAreIgnored() {
+        let start = date("2026-01-07T00:00:00Z")
+        let values: [Double] = [28, 27, -40, 26, 25]
+        let readings = values.enumerated().map {
+            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
+        }
+        #expect(SnotelProvider.removeSpikes(readings, maxPerHour: SnotelProvider.maxDegreesPerHour).map(\.value) == [28, 27, 26, 25])
+    }
+
     @Test func outdatedStationFallsBackToCurrentOne() async throws {
         // Morse Lake's latest reading is 2026-01-05 00:00 PST, 13.5 hours old. Cayuse Pass is current.
         let location = try catalogLocation("crystal")
@@ -94,18 +123,18 @@ struct SnotelProviderTests {
         let start = date("2026-01-07T00:00:00Z")
         let values: [Double] = [40, 41, 0, 42, 90, 43, 44]
         let readings = values.enumerated().map {
-            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), inches: $0.element)
+            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
         }
-        #expect(SnotelProvider.removeSpikes(readings).map(\.inches) == [40, 41, 42, 43, 44])
+        #expect(SnotelProvider.removeSpikes(readings).map(\.value) == [40, 41, 42, 43, 44])
     }
 
     @Test func badFirstReadingDoesNotRejectEverything() {
         let start = date("2026-01-07T00:00:00Z")
         let values: [Double] = [0, 40, 41, 41, 42]
         let readings = values.enumerated().map {
-            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), inches: $0.element)
+            SnotelProvider.Reading(date: start.addingTimeInterval(Double($0.offset) * 3600), value: $0.element)
         }
-        #expect(SnotelProvider.removeSpikes(readings).map(\.inches) == [40, 41, 41, 42])
+        #expect(SnotelProvider.removeSpikes(readings).map(\.value) == [40, 41, 41, 42])
     }
 
     @Test func suspectAndMissingValuesAreSkipped() throws {
@@ -139,6 +168,6 @@ struct SnotelProviderTests {
         let query = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value!) })
         #expect(query["beginDate"] == "2026-01-06 03:30")
         #expect(query["endDate"] == "2026-01-07 10:30")
-        #expect(query["elements"] == "SNWD")
+        #expect(query["elements"] == "SNWD,TOBS")
     }
 }

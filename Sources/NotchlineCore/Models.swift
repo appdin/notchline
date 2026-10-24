@@ -47,6 +47,17 @@ public struct ConditionsSnapshot: Codable, Equatable, Sendable {
         return now.timeIntervalSince(date) > Self.outdatedAfter
     }
 
+    /// Station temperatures older than this give way to the forecast hour.
+    public static let stationTempMaxAge: TimeInterval = 2 * 60 * 60
+
+    public func currentTemp(now: Date) -> CurrentTemp? {
+        if let observed, let tempF = observed.airTempF, let at = observed.airTempObservedAt,
+           now.timeIntervalSince(at) <= Self.stationTempMaxAge {
+            return CurrentTemp(tempF: tempF, isForecast: false)
+        }
+        return forecast?.tempNowF.map { CurrentTemp(tempF: $0, isForecast: true) }
+    }
+
     /// Most recent successful fetch of any metric.
     public var lastUpdated: Date? {
         updatedAt.values.max()
@@ -65,14 +76,19 @@ public struct ObservedSnow: Codable, Equatable, Sendable {
     public var stationName: String
     public var stationElevationFt: Int
     public var isModeled: Bool
+    /// Air temperature at the same station, with its own reading time. nil where the station has no sensor.
+    public var airTempF: Double?
+    public var airTempObservedAt: Date?
 
-    public init(depthInches: Double, snow24hInches: Double?, observedAt: Date, stationName: String, stationElevationFt: Int, isModeled: Bool = false) {
+    public init(depthInches: Double, snow24hInches: Double?, observedAt: Date, stationName: String, stationElevationFt: Int, isModeled: Bool = false, airTempF: Double? = nil, airTempObservedAt: Date? = nil) {
         self.depthInches = depthInches
         self.snow24hInches = snow24hInches
         self.observedAt = observedAt
         self.stationName = stationName
         self.stationElevationFt = stationElevationFt
         self.isModeled = isModeled
+        self.airTempF = airTempF
+        self.airTempObservedAt = airTempObservedAt
     }
 }
 
@@ -81,13 +97,57 @@ public struct SnowForecast: Codable, Equatable, Sendable {
     public var issuedAt: Date?
     public var gridElevationFt: Int?
     public var sourceName: String
+    /// Forecast temperature for the hour the forecast was fetched. Used when there is no current station reading.
+    public var tempNowF: Double?
+    /// The daytime high that had not ended when fetched: today's, or tomorrow's in the evening.
+    public var high: ForecastTemp?
+    /// The overnight low that had not ended when fetched.
+    public var low: ForecastTemp?
+    public var windNow: Wind?
+    /// Peak sustained speed and peak gust over the next 24 hours, each taken independently.
+    public var windPeak24h: Wind?
 
-    public init(next24hInches: Double, issuedAt: Date?, gridElevationFt: Int?, sourceName: String) {
+    public init(next24hInches: Double, issuedAt: Date?, gridElevationFt: Int?, sourceName: String, tempNowF: Double? = nil, high: ForecastTemp? = nil, low: ForecastTemp? = nil, windNow: Wind? = nil, windPeak24h: Wind? = nil) {
         self.next24hInches = next24hInches
         self.issuedAt = issuedAt
         self.gridElevationFt = gridElevationFt
         self.sourceName = sourceName
+        self.tempNowF = tempNowF
+        self.high = high
+        self.low = low
+        self.windNow = windNow
+        self.windPeak24h = windPeak24h
     }
+}
+
+/// A forecast high or low and the period it covers.
+public struct ForecastTemp: Codable, Equatable, Sendable {
+    public var tempF: Double
+    public var period: DateInterval
+
+    public init(tempF: Double, period: DateInterval) {
+        self.tempF = tempF
+        self.period = period
+    }
+}
+
+public struct Wind: Codable, Equatable, Sendable {
+    public var sustainedMph: Double
+    public var gustMph: Double?
+    /// Direction the wind blows from, in degrees clockwise from north.
+    public var directionDegrees: Double?
+
+    public init(sustainedMph: Double, gustMph: Double? = nil, directionDegrees: Double? = nil) {
+        self.sustainedMph = sustainedMph
+        self.gustMph = gustMph
+        self.directionDegrees = directionDegrees
+    }
+}
+
+/// Current temperature for display: a station reading when one is recent, otherwise the forecast hour.
+public struct CurrentTemp: Equatable, Sendable {
+    public var tempF: Double
+    public var isForecast: Bool
 }
 
 public struct DangerSummary: Codable, Equatable, Sendable {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Observed snow depth from USDA NRCS SNOTEL stations via the AWDB REST API.
+/// Observed snow depth and air temperature from USDA NRCS SNOTEL stations via the AWDB REST API.
 /// https://wcc.sc.egov.usda.gov/awdbRestApi/swagger-ui/index.html
 public struct SnotelProvider: ObservedSnowProvider {
     static let baseURL = URL(string: "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/data")!
@@ -10,6 +10,8 @@ public struct SnotelProvider: ObservedSnowProvider {
     static let maxReadingAge: TimeInterval = 6 * 60 * 60
     /// Depth changes faster than this are treated as sensor spikes or dropouts.
     static let maxInchesPerHour = 12.0
+    /// Air temperature changes faster than this are treated as sensor glitches.
+    static let maxDegreesPerHour = 15.0
 
     private let http: HTTPClient
 
@@ -48,7 +50,7 @@ public struct SnotelProvider: ObservedSnowProvider {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "stationTriplets", value: station.triplet),
-            URLQueryItem(name: "elements", value: "SNWD"),
+            URLQueryItem(name: "elements", value: "SNWD,TOBS"),
             URLQueryItem(name: "duration", value: "HOURLY"),
             URLQueryItem(name: "beginDate", value: formatter.string(from: now.addingTimeInterval(-30 * 60 * 60))),
             URLQueryItem(name: "endDate", value: formatter.string(from: now.addingTimeInterval(60 * 60))),
@@ -59,43 +61,51 @@ public struct SnotelProvider: ObservedSnowProvider {
 
     static func parse(_ data: Data, station: SnotelStation, now: Date) throws -> ObservedSnow {
         let response = try JSONDecoder().decode([StationData].self, from: data)
-        guard let values = response.first?.data.first(where: { $0.stationElement.elementCode == "SNWD" })?.values else {
+        let elements = response.first?.data ?? []
+        guard let depthValues = elements.first(where: { $0.stationElement.elementCode == "SNWD" })?.values else {
             throw ProviderError.noData("SNWD for \(station.triplet)")
         }
         let formatter = stationDateFormatter(station)
-        let readings = values.compactMap { value -> Reading? in
-            guard let inches = value.value, inches >= 0, value.qcFlag != "S",
-                  let date = formatter.date(from: value.date),
-                  date <= now.addingTimeInterval(60 * 60) else { return nil }
-            return Reading(date: date, inches: inches)
+        func readings(_ values: [Value], allowNegative: Bool) -> [Reading] {
+            values.compactMap { value -> Reading? in
+                guard let number = value.value, allowNegative || number >= 0, value.qcFlag != "S",
+                      let date = formatter.date(from: value.date),
+                      date <= now.addingTimeInterval(60 * 60) else { return nil }
+                return Reading(date: date, value: number)
+            }
+            .sorted { $0.date < $1.date }
         }
-        let clean = removeSpikes(readings.sorted { $0.date < $1.date })
+        let clean = removeSpikes(readings(depthValues, allowNegative: false), maxPerHour: maxInchesPerHour)
         guard let latest = clean.last else {
             throw ProviderError.noData("valid SNWD readings for \(station.triplet)")
         }
-        let depth = median(of: clean.suffix(3).map(\.inches))
+        let depth = median(of: clean.suffix(3).map(\.value))
         let snow24h = depth24hAgo(clean, latest: latest.date).map { max(0, depth - $0) }
+        let temps = elements.first(where: { $0.stationElement.elementCode == "TOBS" })
+            .map { removeSpikes(readings($0.values, allowNegative: true), maxPerHour: maxDegreesPerHour) } ?? []
         return ObservedSnow(
             depthInches: depth,
             snow24hInches: snow24h,
             observedAt: latest.date,
             stationName: station.name,
-            stationElevationFt: station.elevationFt
+            stationElevationFt: station.elevationFt,
+            airTempF: temps.last?.value,
+            airTempObservedAt: temps.last?.date
         )
     }
 
     struct Reading: Equatable {
         let date: Date
-        let inches: Double
+        let value: Double
     }
 
-    /// Drops readings that jump from the last accepted reading faster than `maxInchesPerHour`.
+    /// Drops readings that jump from the last accepted reading faster than `maxPerHour`.
     /// Three consecutive rejected readings that agree with each other become the new baseline,
     /// so a bad first reading or a real step change cannot reject everything after it.
-    static func removeSpikes(_ readings: [Reading]) -> [Reading] {
+    static func removeSpikes(_ readings: [Reading], maxPerHour: Double = maxInchesPerHour) -> [Reading] {
         func plausible(_ a: Reading, _ b: Reading) -> Bool {
             let hours = max(1, abs(b.date.timeIntervalSince(a.date)) / 3600)
-            return abs(b.inches - a.inches) <= maxInchesPerHour * hours
+            return abs(b.value - a.value) <= maxPerHour * hours
         }
         var accepted: [Reading] = []
         var rejected: [Reading] = []
@@ -123,7 +133,7 @@ public struct SnotelProvider: ObservedSnowProvider {
             .sorted { abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target)) }
             .prefix(3)
         guard !nearby.isEmpty else { return nil }
-        return median(of: nearby.map(\.inches))
+        return median(of: nearby.map(\.value))
     }
 
     static func median(of values: [Double]) -> Double {

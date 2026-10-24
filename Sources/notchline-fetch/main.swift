@@ -60,6 +60,23 @@ if let forecast = snapshot.forecast {
 } else {
     print("  Next 24h   \(failure(.forecast))")
 }
+if let current = snapshot.currentTemp(now: Date()) {
+    let source = current.isForecast ? "\(snapshot.forecast?.sourceName ?? "") forecast" : snapshot.observed?.stationName ?? ""
+    print("  Temp now   \(ConditionsFormat.degrees(current.tempF))F  \(source)")
+} else {
+    print("  Temp now   unavailable")
+}
+if let forecast = snapshot.forecast {
+    let high = forecast.high.map { (ConditionsFormat.highIsTomorrow($0, now: Date()) ? "tomorrow " : "") + ConditionsFormat.degrees($0.tempF) } ?? "-"
+    print("  High/Low   \(high) / \(forecast.low.map { ConditionsFormat.degrees($0.tempF) } ?? "-")")
+    if let wind = forecast.windNow {
+        let direction = wind.directionDegrees.map { " from " + ConditionsFormat.compass($0) } ?? ""
+        let peak = forecast.windPeak24h.map { ", next 24h peak \(ConditionsFormat.wind($0)) mph" } ?? ""
+        print("  Wind       \(ConditionsFormat.wind(wind)) mph\(direction)\(peak)")
+    } else {
+        print("  Wind       unavailable")
+    }
+}
 if let danger = snapshot.danger {
     let rating = danger.overall == .noRating ? danger.overall.label : "\(danger.overall.label) (\(danger.overall.rawValue))"
     print("  Avalanche  \(danger.zoneName): \(rating)")

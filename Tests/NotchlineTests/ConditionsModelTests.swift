@@ -155,6 +155,28 @@ struct SnapshotFreshnessTests {
 struct ConditionsFormatTests {
     let now = date("2026-10-24T20:30:00Z")
 
+    @Test func temperatureAndWind() {
+        #expect(ConditionsFormat.degrees(27.6) == "28°")
+        #expect(ConditionsFormat.degrees(-0.3) == "0°")
+        #expect(ConditionsFormat.degrees(-4.4) == "-4°")
+        #expect(ConditionsFormat.wind(Wind(sustainedMph: 14.6, gustMph: 30.2)) == "15 G30")
+        #expect(ConditionsFormat.wind(Wind(sustainedMph: 5, gustMph: nil)) == "5")
+        #expect(ConditionsFormat.wind(Wind(sustainedMph: 5, gustMph: 5.2)) == "5")
+        #expect(ConditionsFormat.compass(225) == "SW")
+        #expect(ConditionsFormat.compass(359) == "N")
+        #expect(ConditionsFormat.compass(20) == "NNE")
+    }
+
+    @Test func highIsTomorrowOnlyForALaterDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        // 15:00Z is 08:00 PDT. now is 13:30 PDT on 10-24.
+        let today = ForecastTemp(tempF: 40, period: DateInterval(start: date("2026-10-24T15:00:00Z"), duration: 13 * 3600))
+        let tomorrow = ForecastTemp(tempF: 42, period: DateInterval(start: date("2026-10-25T15:00:00Z"), duration: 13 * 3600))
+        #expect(!ConditionsFormat.highIsTomorrow(today, now: now, calendar: calendar))
+        #expect(ConditionsFormat.highIsTomorrow(tomorrow, now: now, calendar: calendar))
+    }
+
     @Test func inches() {
         #expect(ConditionsFormat.inches(61) == "61\"")
         #expect(ConditionsFormat.inches(0) == "0\"")
@@ -168,5 +190,39 @@ struct ConditionsFormatTests {
         #expect(ConditionsFormat.age(since: now.addingTimeInterval(-12 * 60), now: now) == "12 min ago")
         #expect(ConditionsFormat.age(since: now.addingTimeInterval(-3 * 3600), now: now) == "3 h ago")
         #expect(ConditionsFormat.age(since: now.addingTimeInterval(-3 * 86400), now: now) == "3 d ago")
+    }
+}
+
+struct CurrentTempTests {
+    let now = date("2026-01-07T18:00:00Z")
+
+    private func snapshot(stationTempAt: Date?) -> ConditionsSnapshot {
+        ConditionsSnapshot(
+            locationID: "mt-baker",
+            observed: ObservedSnow(
+                depthInches: 40, snow24hInches: nil, observedAt: now, stationName: "Wells Creek", stationElevationFt: 4040,
+                airTempF: stationTempAt == nil ? nil : 27, airTempObservedAt: stationTempAt),
+            forecast: SnowForecast(next24hInches: 0, issuedAt: nil, gridElevationFt: nil, sourceName: "NWS", tempNowF: 30),
+            fetchedAt: now)
+    }
+
+    @Test func prefersRecentStationReading() {
+        #expect(snapshot(stationTempAt: now.addingTimeInterval(-3600)).currentTemp(now: now) == CurrentTemp(tempF: 27, isForecast: false))
+    }
+
+    @Test func fallsBackToForecastWhenStationIsOldOrMissing() {
+        #expect(snapshot(stationTempAt: now.addingTimeInterval(-3 * 3600)).currentTemp(now: now) == CurrentTemp(tempF: 30, isForecast: true))
+        #expect(snapshot(stationTempAt: nil).currentTemp(now: now) == CurrentTemp(tempF: 30, isForecast: true))
+    }
+
+    @Test func snapshotsSavedBeforeTemperatureStillDecode() throws {
+        let json = """
+        {"locationID":"mt-baker","staleMetrics":[],"updatedAt":{},"fetchedAt":0,
+         "observed":{"depthInches":40,"observedAt":0,"stationName":"Wells Creek","stationElevationFt":4040,"isModeled":false},
+         "forecast":{"next24hInches":2,"sourceName":"NWS"}}
+        """
+        let snapshot = try JSONDecoder().decode(ConditionsSnapshot.self, from: Data(json.utf8))
+        #expect(snapshot.observed?.airTempF == nil)
+        #expect(snapshot.forecast?.windNow == nil)
     }
 }

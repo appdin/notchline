@@ -32,7 +32,10 @@ app: build
 	codesign --force --options runtime --timestamp -s "$(SIGN_IDENTITY)" $(APP)
 	codesign --verify --strict $(APP)
 
+# Quit any running copy first. `open` would otherwise just activate it instead of launching the new build.
 run: app
+	-pkill -x Notchline
+	@while pgrep -x Notchline > /dev/null; do sleep 0.2; done
 	open $(APP)
 
 # Live snapshot for one location: make fetch LOCATION=mt-baker
