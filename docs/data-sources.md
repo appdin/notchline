@@ -89,6 +89,6 @@ Zones resolved from coordinates by point-in-polygon on 2026-10-24:
 
 On 2026-10-24 every NWAC zone was off-season (`danger_level: -1`), with the early season statement valid until 2026-11-21.
 
-## British Columbia (Phase 5)
+## British Columbia (Phase 6)
 
 Not yet investigated. The SNOTEL station list includes some BC sites (for example `1D17P:BC:MSNT`, Chilliwack River, a manual snow course), which may be worth checking alongside the options in the plan.

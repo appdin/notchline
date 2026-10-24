@@ -1,6 +1,6 @@
 # Notchline: Implementation Plan
 
-A lightweight native macOS menu bar app that shows mountain conditions in the MacBook notch, in the style of MenuScores. It starts with snow and avalanche conditions at ski areas in Washington and British Columbia, and is designed so other locations and condition types can be added later.
+A lightweight native macOS menu bar app that shows mountain conditions in the MacBook notch, in the style of MenuScores. It starts with snow, temperature, wind and avalanche conditions at ski areas in Washington and British Columbia, and is designed so other locations and condition types can be added later.
 
 ## Goal
 
@@ -11,9 +11,13 @@ For the selected location, at a glance in the notch:
 | Base | Current observed snow depth at a station near the ski area base |
 | Last 24h | Observed new snow in the last 24 hours |
 | Next 24h | Forecast snowfall for the next 24 hours |
+| Temp now | Current air temperature, observed at the station where available |
+| High / Low | Forecast high for today (tomorrow once today's daytime period has ended) and the next overnight low |
+| Wind now | Sustained speed, gusts and direction for the current hour |
+| Wind next 24h | Peak sustained speed and peak gust forecast over the next 24 hours, with direction at the peak |
 | Avalanche | Current backcountry avalanche danger for the forecast zone containing the location |
 
-Compact notch view example: `❄ 61" · +8" / +12" · ⚠ 3`
+Compact notch view example: `❄ 61" · +8" / +12" · ⚠ 3`. Temperature and wind are in the expanded view and menu, not the compact view, which has little room beside the notch.
 Expanded view: each metric with label, units, data age and source, danger by elevation band, and links to the full avalanche forecast and station page.
 
 The user picks the location from a list. Mt. Baker is the default and the first one built end to end.
@@ -30,7 +34,7 @@ The user picks the location from a list. Mt. Baker is the default and the first 
 | `revelstoke` | Revelstoke Mountain Resort | BC | Avalanche Canada |
 | `sun-peaks` | Sun Peaks Resort | BC | Avalanche Canada |
 
-Mt. Baker ships first (Phases 1 to 3). The other WA locations reuse the same data sources and mostly need configuration. BC locations need different sources (see below) and come in Phase 5.
+Mt. Baker ships first (Phases 1 to 3). The other WA locations reuse the same data sources and mostly need configuration. BC locations need different sources (see below) and come in Phase 6.
 
 ## Non-goals (v1)
 
@@ -73,10 +77,10 @@ Sources/
 │   │   ├── SnotelProvider.swift
 │   │   ├── NWSForecastProvider.swift
 │   │   └── AvalancheOrgProvider.swift
-│   ├── Canada/                      // Phase 5
+│   ├── Canada/                      // Phase 6
 │   │   ├── BCObservedSnowProvider.swift
 │   │   └── AvalancheCanadaProvider.swift
-│   ├── Global/                      // Phase 5
+│   ├── Global/                      // Phase 6
 │   │   └── OpenMeteoProvider.swift  // forecast for BC, fallback forecast and modeled depth anywhere
 │   ├── ProviderFactory.swift        // picks providers for a Location
 │   ├── ConditionsService.swift      // fetches all metrics concurrently, merges with the previous snapshot
@@ -91,8 +95,8 @@ Sources/
 │   ├── ConditionsSummaryView.swift  // metrics and avalanche summary shared by the menu and expanded notch
 │   ├── Notch/NotchController.swift  // owns the DynamicNotch; pin, hover expand and collapse, screen changes
 │   ├── Notch/NotchViews.swift       // compact leading and trailing, expanded view
-│   ├── Menu/MenuContentView.swift   // summary, location picker, pin toggle, refresh, quit (settings in Phase 6)
-│   └── Settings/SettingsView.swift  // Phase 6
+│   ├── Menu/MenuContentView.swift   // summary, location picker, pin toggle, refresh, quit (settings in Phase 7)
+│   └── Settings/SettingsView.swift  // Phase 7
 └── notchline-fetch/main.swift       // debug command: live snapshot for one location
 Tests/NotchlineTests/
 ├── Fixtures/                        // saved responses from every source
@@ -114,7 +118,7 @@ enum ObservedSnowSource: Codable, Hashable {
 // SnotelStation: triplet ("909:WA:SNTL"), name, elevationFt, utcOffsetHours
 ```
 
-BC sources get their own case once Phase 5 discovery picks them.
+BC sources get their own case once Phase 6 discovery picks them.
 
 Avalanche zones are not hardcoded. They are resolved at runtime from the location's coordinates (see Avalanche below), so a new location gets the right zone automatically.
 
@@ -138,7 +142,7 @@ Providers take an `HTTPClient` so tests can serve fixtures, and `now` so time wi
 
 | Metric | US (WA) | Canada (BC) | Fallback |
 |---|---|---|---|
-| Observed snow | SNOTEL | BC source from Phase 5 discovery | Open-Meteo modeled snow depth, labeled "modeled" |
+| Observed snow | SNOTEL | BC source from Phase 6 discovery | Open-Meteo modeled snow depth, labeled "modeled" |
 | Forecast | NWS gridpoint | Open-Meteo | Open-Meteo |
 | Avalanche | avalanche.org | Avalanche Canada | none (show "unavailable") |
 
@@ -147,8 +151,11 @@ Providers take an `HTTPClient` so tests can serve fixtures, and `now` so time wi
 ```swift
 struct ConditionsSnapshot: Codable, Equatable {
     let locationID: String
-    var observed: ObservedSnow?       // depthInches, snow24hInches?, observedAt, stationName, stationElevationFt, isModeled
-    var forecast: SnowForecast?       // next24hInches, issuedAt, gridElevationFt, sourceName
+    var observed: ObservedSnow?       // depthInches, snow24hInches?, observedAt, stationName, stationElevationFt, isModeled,
+                                      // airTempF?, airTempObservedAt?
+    var forecast: SnowForecast?       // next24hInches, issuedAt, gridElevationFt, sourceName,
+                                      // tempNowF?, highF?, highIsTomorrow, lowF?, windNow?, windPeak24h?
+    // Wind: sustainedMph, gustMph?, directionDegrees?
     var danger: DangerSummary?        // zoneName, overall, upper/middle/lower, issuedAt, validUntil, forecastURL
     var staleMetrics: Set<Metric>     // failed this refresh; value carried over from the previous snapshot
     var fetchedAt: Date
@@ -160,6 +167,8 @@ enum DangerLevel: Int, Codable {
 ```
 
 Every metric is optional so one failing source never blanks the whole display. Each source fails independently, and the UI shows the last good value with an age indicator.
+
+Temperature and wind ride on the existing observed and forecast fetches rather than adding requests or `Metric` cases, so they share those metrics' staleness. Temp now shows the station reading when `airTempF` is present and no more than 2 hours old, otherwise `tempNowF` labeled "forecast".
 
 ## Data sources
 
@@ -175,6 +184,13 @@ Notes:
 - NWS requires a `User-Agent` header identifying the app and a contact, for example `Notchline/1.0 (you@example.com)`.
 - Read `properties.elevation` from the gridpoint and show it in the expanded view, since the grid cell elevation may differ from the station.
 - Treat `null` values as zero, but flag the forecast as missing if the array is empty.
+
+Temperature and wind come from the same gridpoint response (all values in metric units, converted for display):
+- `temperature` (`degC`, hourly or multi-hour intervals): the interval containing `now` gives `tempNowF`.
+- `maxTemperature` (`degC`, one daytime interval per day, for example `T15:00:00+00:00/PT13H`): `highF` is the interval that has not ended yet, with `highIsTomorrow` set when it starts on a later local date than `now`.
+- `minTemperature` (`degC`, one overnight interval per day): `lowF` is the interval that has not ended yet.
+- `windSpeed` and `windGust` (`km_h-1`) and `windDirection` (degrees, the direction the wind blows from): the intervals containing `now` give `windNow`. `windPeak24h` is the highest `windSpeed` and highest `windGust` overlapping `[now, now + 24h]`, each taken independently, with the direction at the peak sustained speed.
+- A missing or empty series leaves that field nil. It does not fail the forecast, which stays tied to snowfall.
 
 ### US: avalanche.org danger (public, no key)
 
@@ -194,20 +210,25 @@ Gotchas:
 - Depth sensors produce spikes and dropouts. Ignore readings that jump more than 12 in/hour, and use the median of the last 3 valid hourly readings.
 - 24h snow is the depth change over 24 hours, floored at 0. Settling makes it read low during and after storms.
 
+Air temperature: request `elements=SNWD,TOBS` in the same call. `TOBS` is hourly in °F at every WA station used, and keeps reporting hourly off-season when depth goes sporadic. Take the latest valid `TOBS` reading from the station that supplied the depth, dropping suspect values and jumps over 15 °F/hour.
+
+Observed wind is not used. Only 2 of the 7 WA stations (Wells Creek, Cayuse Pass) have wind sensors, and SNOTEL sites sit in sheltered forest clearings, so they read well below ski area and ridge winds. Wind comes from the NWS forecast, labeled as forecast. NWAC telemetry has ridge-top wind, another reason to pursue open question 1.
+
 NWAC telemetry was the original choice because its stations sit closer to the base areas (Heather Meadows at Baker, for example). It has no documented API: the station pages embed the data and an access token for NWAC's own client, which Notchline should not reuse. Using NWAC would mean asking NWAC for API access, then adding an `ObservedSnowSource.nwac` case. See `docs/data-sources.md`.
 
 ### Canada: Avalanche Canada danger (public, no key)
 
 Avalanche Canada publishes forecasts for all Canadian regions through a public API with point-based lookup, so the location's coordinates resolve directly to a forecast region (expected: Sea to Sky for Whistler; confirm the regions for Revelstoke and Sun Peaks during discovery).
 
-Phase 5 discovery task: confirm the current point-lookup endpoint and response shape (danger ratings by day and by alpine / treeline / below treeline), including the off-season response. Save fixtures. Map Avalanche Canada's elevation bands onto `upper` / `middle` / `lower` and its ratings onto the same 1 to 5 `DangerLevel` scale (both use the North American Public Avalanche Danger Scale).
+Phase 6 discovery task: confirm the current point-lookup endpoint and response shape (danger ratings by day and by alpine / treeline / below treeline), including the off-season response. Save fixtures. Map Avalanche Canada's elevation bands onto `upper` / `middle` / `lower` and its ratings onto the same 1 to 5 `DangerLevel` scale (both use the North American Public Avalanche Danger Scale).
 
 ### Canada: forecast (Open-Meteo)
 
 NWS does not cover BC. Use Open-Meteo, which is free with no API key for non-commercial use and requests attribution.
 
-- `GET https://api.open-meteo.com/v1/forecast?latitude=..&longitude=..&elevation=<forecastElevationM>&hourly=snowfall,snow_depth&timezone=UTC&forecast_days=2`
+- `GET https://api.open-meteo.com/v1/forecast?latitude=..&longitude=..&elevation=<forecastElevationM>&hourly=snowfall,snow_depth,temperature_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=3`
 - Sum `hourly.snowfall` (cm) over the next 24 hours.
+- Temperature and wind map onto the same fields as NWS: the current hour for temp and wind now, the hourly maxima over 24 hours for the wind peak. Daily max and min are by local calendar day, so high is today's max until late afternoon local time, then tomorrow's; low is the next day's min (closest to the overnight low). `timezone=auto` makes `daily` local; hourly times then come back local too and need the response's `utc_offset_seconds`.
 - Pass `elevation` explicitly so the downscaling targets the ski area, not the grid cell average.
 - Open-Meteo can be pinned to specific models (for example the Canadian GEM/HRDPS models) via the `models` parameter. Compare a few models against observed snowfall in the first weeks of the season and pick one per region.
 
@@ -215,7 +236,7 @@ Open-Meteo is also the forecast fallback for US locations if NWS is down.
 
 ### Canada: observed snow (needs discovery)
 
-There is no single equivalent of SNOTEL for BC ski areas. Phase 5 discovery task, in order of preference:
+There is no single equivalent of SNOTEL for BC ski areas. Phase 6 discovery task, in order of preference:
 1. Avalanche Canada's map includes a weather station layer. Check whether those stations expose snow depth through an accessible endpoint.
 2. BC Ministry of Environment automated snow weather stations (snow pillows), if one is near a given location.
 3. Environment and Climate Change Canada hourly observations (MSC GeoMet / api.weather.gc.ca), if a station near the location reports snow depth.
@@ -253,10 +274,12 @@ Mt. Baker Ski Area                              updated 12 min ago
   Base         Last 24h       Next 24h
   61"           +8"           +12"
   Heather Meadows 4,210'       NWS grid 4,350'
+  28°F now · High 31° · Low 22°
+  Wind SW 15 G 30 mph · next 24h to 25 G 45
   Avalanche · West Slopes North: Considerable (3)
     Above TL 3 · Near TL 3 · Below TL 2           [Forecast ↗]
 ```
-Show a small "modeled" tag next to Base when `baseDepthIsModeled` is true.
+Show a small "modeled" tag next to Base when `baseDepthIsModeled` is true, and a "forecast" tag next to the current temperature when it is not a station reading. "High" reads "Tomorrow" when `highIsTomorrow`. Gusts are omitted when the source has none. Raise the height to roughly 190 pt for the two extra rows.
 
 ## Menu bar
 
@@ -290,7 +313,7 @@ Show a small "modeled" tag next to Base when `baseDepthIsModeled` is true.
 
 - Location (same list as the menu picker)
 - Refresh interval (15 / 30 / 60 minutes)
-- Units: inches / cm. Default by the selected location's country (inches for US, cm for Canada), with an override.
+- Units: imperial (inches, °F, mph) / metric (cm, °C, km/h). Default by the selected location's country (imperial for US, metric for Canada), with an override.
 - Pin to notch on launch (on / off)
 - New snow alert threshold (off / 3" / 6" / 12", or 10 / 15 / 30 cm)
 - Launch at login (`SMAppService.mainApp`)
@@ -324,15 +347,24 @@ Done when: the compact view sits cleanly beside the notch, expands on hover, and
 
 Done when: all four WA locations show live data for all four metrics.
 
-### Phase 5: British Columbia
+### Phase 5: Temperature and wind (Washington)
+- Add `TOBS` to the SNOTEL request and parse air temperature alongside depth.
+- Parse `temperature`, `maxTemperature`, `minTemperature`, `windSpeed`, `windGust` and `windDirection` from the NWS gridpoint. Recapture the trimmed gridpoint fixture with these series, plus an in-season one with wind and a freezing high/low.
+- Add the fields to the model, the expanded notch view, the menu dropdown and `notchline-fetch`. Display in °F and mph until Phase 7 adds units.
+- Snapshots saved before this phase decode with the new fields nil.
+
+Done when: all four WA locations show current temperature (station where available), high and low, current wind and the 24h wind peak, with gusts, in the expanded view and menu.
+
+### Phase 6: British Columbia
 - Avalanche Canada discovery and provider.
-- Open-Meteo provider (also wire it in as the US forecast fallback).
+- Open-Meteo provider, including temperature and wind (also wire it in as the US forecast fallback).
+- BC observed temperature from the chosen station source where it has one, otherwise Open-Meteo labeled "forecast".
 - BC observed snow discovery; implement the chosen source(s) or mark locations `.modeledOnly`.
 - Unit defaults by country.
 
-Done when: Whistler, Revelstoke and Sun Peaks show live avalanche danger and forecast, plus observed or clearly labeled modeled base depth.
+Done when: Whistler, Revelstoke and Sun Peaks show live avalanche danger, snow, temperature and wind forecast, plus observed or clearly labeled modeled base depth.
 
-### Phase 6: Polish
+### Phase 7: Polish
 - Settings window, launch at login, new snow alert, units.
 - App icon, About panel with data attribution.
 - Optional: GitHub Actions build, Homebrew cask for personal install. A cask installed on other Macs needs Developer ID signing and notarization (see Tech stack).
@@ -342,6 +374,7 @@ Done when: Whistler, Revelstoke and Sun Peaks show live avalanche danger and for
 - Unit tests per provider using saved fixtures, including: off-season avalanche data (both centers), empty NWS snowfall array, SNOTEL sensor spike and dropout, PST timestamp parsing across the November DST change.
 - Point-in-polygon tests: each launch location resolves to the expected avalanche zone, including a point on a zone border.
 - 24h prorating tests for NWS intervals that straddle the window edges.
+- Temperature and wind: high rolls to tomorrow after the daytime interval ends, low picks the next overnight interval, wind peak takes sustained and gust maxima independently, missing gust series leaves gusts nil, stale station `TOBS` falls back to the forecast hour.
 - Location switching: cached snapshot shown immediately, refresh replaces it, unknown stored ID falls back to Mt. Baker.
 - Manual matrix: notched MacBook, external display only, sleep and wake, airplane mode.
 
@@ -356,5 +389,5 @@ Done when: Whistler, Revelstoke and Sun Peaks show live avalanche danger and for
 
 1. Whether to ask NWAC for API access, for station data closer to the base areas than SNOTEL (Phase 1 found no public API).
 2. For locations with two stations (like Baker), show the lower station as "base" by default, or the higher one, or both in the expanded view? Start with the lower station as base and the upper station in the expanded view.
-3. Best observed snow source per BC location (Phase 5).
-4. Which Open-Meteo model to use for BC forecasts (Phase 5, after comparing against observations).
+3. Best observed snow source per BC location (Phase 6).
+4. Which Open-Meteo model to use for BC forecasts (Phase 6, after comparing against observations).

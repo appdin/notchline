@@ -28,14 +28,14 @@ public struct ProviderFactory: Sendable {
     public func providers(for location: Location) -> Providers {
         let observed: ObservedSnowProvider? = switch location.observedSnow {
         case .snotel: snotel
-        // Open-Meteo modeled depth arrives in Phase 5.
+        // Open-Meteo modeled depth arrives in Phase 6.
         case .modeledOnly, nil: nil
         }
         switch location.country {
         case .us:
             return Providers(observed: observed, forecast: nws, avalanche: location.avalancheCenter == nil ? nil : avalancheOrg)
         case .ca:
-            // Open-Meteo and Avalanche Canada arrive in Phase 5.
+            // Open-Meteo and Avalanche Canada arrive in Phase 6.
             return Providers(observed: observed, forecast: nil, avalanche: nil)
         }
     }
