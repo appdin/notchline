@@ -1,0 +1,97 @@
+{
+ "id": 185514,
+ "published_time": "2026-09-15T14:35:00+00:00",
+ "expires_time": "2026-11-21T02:30:00+00:00",
+ "product_type": "summary",
+ "status": "published",
+ "danger": [],
+ "forecast_zone": [
+  {
+   "id": 3020,
+   "name": "Olympics",
+   "url": "https://nwac.us/forecasts/avalanche/olympics",
+   "state": "WA",
+   "zone_id": "1",
+   "config": null
+  },
+  {
+   "id": 3021,
+   "name": "West Slopes North",
+   "url": "https://nwac.us/forecasts/avalanche/west-slopes-north",
+   "state": "WA",
+   "zone_id": "4",
+   "config": null
+  },
+  {
+   "id": 3022,
+   "name": "West Slopes Central",
+   "url": "https://nwac.us/forecasts/avalanche/west-slopes-central",
+   "state": "WA",
+   "zone_id": "5",
+   "config": null
+  },
+  {
+   "id": 3023,
+   "name": "West Slopes South",
+   "url": "https://nwac.us/forecasts/avalanche/west-slopes-south",
+   "state": "WA",
+   "zone_id": "6",
+   "config": null
+  },
+  {
+   "id": 3024,
+   "name": "Stevens Pass",
+   "url": "https://nwac.us/forecasts/avalanche/stevens-pass",
+   "state": "WA",
+   "zone_id": "2",
+   "config": null
+  },
+  {
+   "id": 3028,
+   "name": "Snoqualmie Pass",
+   "url": "https://nwac.us/forecasts/avalanche/snoqualmie-pass",
+   "state": "WA",
+   "zone_id": "3",
+   "config": null
+  },
+  {
+   "id": 3029,
+   "name": "East Slopes North",
+   "url": "https://nwac.us/forecasts/avalanche/east-slopes-north",
+   "state": "WA",
+   "zone_id": "7",
+   "config": null
+  },
+  {
+   "id": 3030,
+   "name": "East Slopes Central",
+   "url": "https://nwac.us/forecasts/avalanche/east-slopes-central",
+   "state": "WA",
+   "zone_id": "8",
+   "config": null
+  },
+  {
+   "id": 3031,
+   "name": "East Slopes South",
+   "url": "https://nwac.us/forecasts/avalanche/east-slopes-south",
+   "state": "WA",
+   "zone_id": "9",
+   "config": null
+  },
+  {
+   "id": 3032,
+   "name": "Mt Hood",
+   "url": "https://nwac.us/forecasts/avalanche/mt-hood",
+   "state": "OR",
+   "zone_id": "10",
+   "config": null
+  }
+ ],
+ "avalanche_center": {
+  "id": "NWAC",
+  "name": "Northwest Avalanche Center",
+  "url": "https://www.nwac.us/",
+  "city": "Seattle",
+  "state": "WA"
+ }
+}

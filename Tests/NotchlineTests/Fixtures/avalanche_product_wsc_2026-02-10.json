@@ -1,0 +1,38 @@
+{
+ "id": 180047,
+ "published_time": "2026-02-10T02:02:00+00:00",
+ "expires_time": "2026-02-11T02:00:00+00:00",
+ "product_type": "forecast",
+ "status": "published",
+ "danger": [
+  {
+   "lower": 1,
+   "upper": 2,
+   "middle": 1,
+   "valid_day": "current"
+  },
+  {
+   "lower": 1,
+   "upper": 2,
+   "middle": 1,
+   "valid_day": "tomorrow"
+  }
+ ],
+ "forecast_zone": [
+  {
+   "id": 3022,
+   "name": "West Slopes Central",
+   "url": "https://nwac.us/forecasts/avalanche/west-slopes-central",
+   "state": "WA",
+   "zone_id": "5",
+   "config": null
+  }
+ ],
+ "avalanche_center": {
+  "id": "NWAC",
+  "name": "Northwest Avalanche Center",
+  "url": "https://www.nwac.us/",
+  "city": "Seattle",
+  "state": "WA"
+ }
+}

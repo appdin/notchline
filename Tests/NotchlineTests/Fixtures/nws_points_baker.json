@@ -1,0 +1,112 @@
+{
+    "@context": [
+        "https://geojson.org/geojson-ld/geojson-context.jsonld",
+        {
+            "@version": "1.1",
+            "wx": "https://api.weather.gov/ontology#",
+            "s": "https://schema.org/",
+            "geo": "http://www.opengis.net/ont/geosparql#",
+            "unit": "http://codes.wmo.int/common/unit/",
+            "@vocab": "https://api.weather.gov/ontology#",
+            "geometry": {
+                "@id": "s:GeoCoordinates",
+                "@type": "geo:wktLiteral"
+            },
+            "city": "s:addressLocality",
+            "state": "s:addressRegion",
+            "distance": {
+                "@id": "s:Distance",
+                "@type": "s:QuantitativeValue"
+            },
+            "bearing": {
+                "@type": "s:QuantitativeValue"
+            },
+            "value": {
+                "@id": "s:value"
+            },
+            "unitCode": {
+                "@id": "s:unitCode",
+                "@type": "@id"
+            },
+            "forecastOffice": {
+                "@type": "@id"
+            },
+            "forecastGridData": {
+                "@type": "@id"
+            },
+            "publicZone": {
+                "@type": "@id"
+            },
+            "county": {
+                "@type": "@id"
+            }
+        }
+    ],
+    "id": "https://api.weather.gov/points/48.863,-121.678",
+    "type": "Feature",
+    "geometry": {
+        "type": "Point",
+        "coordinates": [
+            -121.678,
+            48.863
+        ]
+    },
+    "properties": {
+        "@id": "https://api.weather.gov/points/48.863,-121.678",
+        "@type": "wx:Point",
+        "cwa": "SEW",
+        "type": "land",
+        "forecastOffice": "https://api.weather.gov/offices/SEW",
+        "gridId": "SEW",
+        "gridX": 157,
+        "gridY": 123,
+        "forecast": "https://api.weather.gov/gridpoints/SEW/157,123/forecast",
+        "forecastHourly": "https://api.weather.gov/gridpoints/SEW/157,123/forecast/hourly",
+        "forecastGridData": "https://api.weather.gov/gridpoints/SEW/157,123",
+        "observationStations": "https://api.weather.gov/gridpoints/SEW/157,123/stations",
+        "relativeLocation": {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -121.9322077,
+                    48.8920551
+                ]
+            },
+            "properties": {
+                "city": "Glacier",
+                "state": "WA",
+                "distance": {
+                    "unitCode": "wmoUnit:m",
+                    "value": 17241.379544203
+                },
+                "bearing": {
+                    "unitCode": "wmoUnit:degree_(angle)",
+                    "value": 99
+                }
+            }
+        },
+        "forecastZone": "https://api.weather.gov/zones/forecast/WAZ301",
+        "county": "https://api.weather.gov/zones/county/WAC073",
+        "fireWeatherZone": "https://api.weather.gov/zones/fire/WAZ658",
+        "timeZone": "America/Los_Angeles",
+        "radarStation": "KATX",
+        "astronomicalData": {
+            "sunrise": "2026-10-24T07:41:36-07:00",
+            "sunset": "2026-10-24T18:00:06-07:00",
+            "transit": "2026-10-24T12:50:51-07:00",
+            "civilTwilightBegin": "2026-10-24T07:09:16-07:00",
+            "civilTwilightEnd": "2026-10-24T18:32:26-07:00",
+            "nauticalTwilightBegin": "2026-10-24T06:32:25-07:00",
+            "nauticalTwilightEnd": "2026-10-24T19:09:17-07:00",
+            "astronomicalTwilightBegin": "2026-10-24T05:55:54-07:00",
+            "astronomicalTwilightEnd": "2026-10-24T19:45:48-07:00"
+        },
+        "nwr": {
+            "transmitter": "KAD93",
+            "sameCode": "053073",
+            "areaBroadcast": "https://api.weather.gov/radio/KAD93/broadcast",
+            "pointBroadcast": "https://api.weather.gov/points/48.863,-121.678/radio"
+        }
+    }
+}

@@ -1,0 +1,145 @@
+[
+  {
+    "id": "mt-baker",
+    "name": "Mt. Baker Ski Area",
+    "shortName": "Baker",
+    "country": "us",
+    "region": "WA",
+    "kind": "skiArea",
+    "latitude": 48.863,
+    "longitude": -121.678,
+    "forecastElevationFt": 4500,
+    "avalancheCenter": "NWAC",
+    "observedSnow": {
+      "snotel": {
+        "stations": [
+          { "triplet": "909:WA:SNTL", "name": "Wells Creek", "elevationFt": 4040, "utcOffsetHours": -8 },
+          { "triplet": "999:WA:SNTL", "name": "Marten Ridge", "elevationFt": 3520, "utcOffsetHours": -8 }
+        ]
+      }
+    },
+    "links": [
+      { "title": "Mt. Baker Ski Area", "url": "https://www.mtbaker.us" },
+      { "title": "Wells Creek SNOTEL", "url": "https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=909" }
+    ]
+  },
+  {
+    "id": "stevens-pass",
+    "name": "Stevens Pass",
+    "shortName": "Stevens",
+    "country": "us",
+    "region": "WA",
+    "kind": "skiArea",
+    "latitude": 47.7448,
+    "longitude": -121.0890,
+    "forecastElevationFt": 4500,
+    "avalancheCenter": "NWAC",
+    "observedSnow": {
+      "snotel": {
+        "stations": [
+          { "triplet": "791:WA:SNTL", "name": "Stevens Pass", "elevationFt": 3940, "utcOffsetHours": -8 }
+        ]
+      }
+    },
+    "links": [
+      { "title": "Stevens Pass", "url": "https://www.stevenspass.com" },
+      { "title": "Stevens Pass SNOTEL", "url": "https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=791" }
+    ]
+  },
+  {
+    "id": "snoqualmie",
+    "name": "The Summit at Snoqualmie",
+    "shortName": "Snoqualmie",
+    "country": "us",
+    "region": "WA",
+    "kind": "skiArea",
+    "latitude": 47.4245,
+    "longitude": -121.4134,
+    "forecastElevationFt": 3500,
+    "avalancheCenter": "NWAC",
+    "observedSnow": {
+      "snotel": {
+        "stations": [
+          { "triplet": "672:WA:SNTL", "name": "Olallie Meadows", "elevationFt": 4010, "utcOffsetHours": -8 },
+          { "triplet": "899:WA:SNTL", "name": "Tinkham Creek", "elevationFt": 3000, "utcOffsetHours": -8 }
+        ]
+      }
+    },
+    "links": [
+      { "title": "The Summit at Snoqualmie", "url": "https://www.summitatsnoqualmie.com" },
+      { "title": "Olallie Meadows SNOTEL", "url": "https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=672" }
+    ]
+  },
+  {
+    "id": "crystal",
+    "name": "Crystal Mountain",
+    "shortName": "Crystal",
+    "country": "us",
+    "region": "WA",
+    "kind": "skiArea",
+    "latitude": 46.9353,
+    "longitude": -121.4747,
+    "forecastElevationFt": 5500,
+    "avalancheCenter": "NWAC",
+    "observedSnow": {
+      "snotel": {
+        "stations": [
+          { "triplet": "642:WA:SNTL", "name": "Morse Lake", "elevationFt": 5400, "utcOffsetHours": -8 },
+          { "triplet": "1085:WA:SNTL", "name": "Cayuse Pass", "elevationFt": 5260, "utcOffsetHours": -8 }
+        ]
+      }
+    },
+    "links": [
+      { "title": "Crystal Mountain", "url": "https://www.crystalmountainresort.com" },
+      { "title": "Morse Lake SNOTEL", "url": "https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=642" }
+    ]
+  },
+  {
+    "id": "whistler",
+    "name": "Whistler Blackcomb",
+    "shortName": "Whistler",
+    "country": "ca",
+    "region": "BC",
+    "kind": "skiArea",
+    "latitude": 50.1150,
+    "longitude": -122.9486,
+    "forecastElevationFt": 5500,
+    "avalancheCenter": null,
+    "observedSnow": null,
+    "links": [
+      { "title": "Whistler Blackcomb", "url": "https://www.whistlerblackcomb.com" }
+    ]
+  },
+  {
+    "id": "revelstoke",
+    "name": "Revelstoke Mountain Resort",
+    "shortName": "Revelstoke",
+    "country": "ca",
+    "region": "BC",
+    "kind": "skiArea",
+    "latitude": 50.9584,
+    "longitude": -118.1636,
+    "forecastElevationFt": 5500,
+    "avalancheCenter": null,
+    "observedSnow": null,
+    "links": [
+      { "title": "Revelstoke Mountain Resort", "url": "https://www.revelstokemountainresort.com" }
+    ]
+  },
+  {
+    "id": "sun-peaks",
+    "name": "Sun Peaks Resort",
+    "shortName": "Sun Peaks",
+    "country": "ca",
+    "region": "BC",
+    "kind": "skiArea",
+    "latitude": 50.8838,
+    "longitude": -119.8906,
+    "forecastElevationFt": 5500,
+    "avalancheCenter": null,
+    "observedSnow": null,
+    "links": [
+      { "title": "Sun Peaks Resort", "url": "https://www.sunpeaksresort.com" }
+    ]
+  }
+]
