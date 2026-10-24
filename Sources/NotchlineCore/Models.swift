@@ -8,6 +8,8 @@ public struct ConditionsSnapshot: Codable, Equatable, Sendable {
     public var danger: DangerSummary?
     /// Metrics whose most recent fetch failed. Their values, if any, are carried over from an earlier snapshot.
     public var staleMetrics: Set<Metric>
+    /// When each metric's value was last fetched successfully. Older than `fetchedAt` for stale metrics.
+    public var updatedAt: [Metric: Date]
     public var fetchedAt: Date
 
     public init(
@@ -16,6 +18,7 @@ public struct ConditionsSnapshot: Codable, Equatable, Sendable {
         forecast: SnowForecast? = nil,
         danger: DangerSummary? = nil,
         staleMetrics: Set<Metric> = [],
+        updatedAt: [Metric: Date] = [:],
         fetchedAt: Date
     ) {
         self.locationID = locationID
@@ -23,11 +26,34 @@ public struct ConditionsSnapshot: Codable, Equatable, Sendable {
         self.forecast = forecast
         self.danger = danger
         self.staleMetrics = staleMetrics
+        self.updatedAt = updatedAt
         self.fetchedAt = fetchedAt
+    }
+
+    /// Values older than this are shown dimmed with their age.
+    public static let outdatedAfter: TimeInterval = 3 * 60 * 60
+
+    /// When a metric's value describes: the station reading time for observed snow, otherwise when it was last fetched.
+    public func valueDate(for metric: Metric) -> Date? {
+        switch metric {
+        case .observed: observed?.observedAt
+        case .forecast: forecast == nil ? nil : updatedAt[.forecast] ?? fetchedAt
+        case .avalanche: danger == nil ? nil : updatedAt[.avalanche] ?? fetchedAt
+        }
+    }
+
+    public func isOutdated(_ metric: Metric, now: Date) -> Bool {
+        guard let date = valueDate(for: metric) else { return false }
+        return now.timeIntervalSince(date) > Self.outdatedAfter
+    }
+
+    /// Most recent successful fetch of any metric.
+    public var lastUpdated: Date? {
+        updatedAt.values.max()
     }
 }
 
-public enum Metric: String, Codable, Hashable, Sendable, CaseIterable {
+public enum Metric: String, Codable, CodingKeyRepresentable, Hashable, Sendable, CaseIterable {
     case observed, forecast, avalanche
 }
 

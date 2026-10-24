@@ -4,6 +4,8 @@ import Foundation
 public struct ConditionsResult: Sendable {
     public let snapshot: ConditionsSnapshot
     public let errors: [Metric: String]
+    /// Metrics that failed for a reason worth retrying, which excludes sources not configured for the location.
+    public let failedMetrics: Set<Metric>
 }
 
 public struct ConditionsService: Sendable {
@@ -25,23 +27,27 @@ public struct ConditionsService: Sendable {
         let previous = previous?.locationID == location.id ? previous : nil
         var snapshot = ConditionsSnapshot(locationID: location.id, fetchedAt: now)
         var errors: [Metric: String] = [:]
+        var failed: Set<Metric> = []
 
         func merge<T>(_ result: Result<T, Error>, _ metric: Metric, _ keyPath: WritableKeyPath<ConditionsSnapshot, T?>) {
             switch result {
             case .success(let value):
                 snapshot[keyPath: keyPath] = value
+                snapshot.updatedAt[metric] = now
             case .failure(let error):
                 errors[metric] = String(describing: error)
-                if let old = previous?[keyPath: keyPath] {
+                if case .notConfigured = error as? ProviderError {} else { failed.insert(metric) }
+                if let previous, let old = previous[keyPath: keyPath] {
                     snapshot[keyPath: keyPath] = old
                     snapshot.staleMetrics.insert(metric)
+                    snapshot.updatedAt[metric] = previous.updatedAt[metric] ?? previous.fetchedAt
                 }
             }
         }
         merge(results.0, .observed, \.observed)
         merge(results.1, .forecast, \.forecast)
         merge(results.2, .avalanche, \.danger)
-        return ConditionsResult(snapshot: snapshot, errors: errors)
+        return ConditionsResult(snapshot: snapshot, errors: errors, failedMetrics: failed)
     }
 
     private static func attempt<P: Sendable, T: Sendable>(

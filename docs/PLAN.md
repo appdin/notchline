@@ -80,12 +80,16 @@ Sources/
 │   │   └── OpenMeteoProvider.swift  // forecast for BC, fallback forecast and modeled depth anywhere
 │   ├── ProviderFactory.swift        // picks providers for a Location
 │   ├── ConditionsService.swift      // fetches all metrics concurrently, merges with the previous snapshot
+│   ├── ConditionsModel.swift        // @MainActor ObservableObject: selected location, per-location snapshot cache
+│   ├── RefreshSchedule.swift        // refresh interval and failure backoff
+│   ├── ConditionsFormat.swift       // display strings shared by the menu and notch
 │   └── SnapshotStore.swift          // last good snapshot per location, JSON in App Support
 ├── Notchline/                       // the app
-│   ├── NotchlineApp.swift           // @main, MenuBarExtra (placeholder until Phase 2)
-│   ├── AppState.swift               // Phase 2: @MainActor ObservableObject, selected location, refresh loop
+│   ├── NotchlineApp.swift           // @main, MenuBarExtra
+│   ├── AppState.swift               // owns ConditionsModel; refresh timer, wake and network triggers, stored location
+│   ├── DangerStyle.swift            // danger scale colors and badge
 │   ├── Notch/                       // Phase 3: NotchController, compact and expanded views
-│   ├── Menu/MenuContentView.swift   // Phase 2: summary, location picker, refresh, settings, quit
+│   ├── Menu/MenuContentView.swift   // summary, location picker, refresh, quit (pin and settings in Phases 3 and 6)
 │   └── Settings/SettingsView.swift  // Phase 6
 └── notchline-fetch/main.swift       // debug command: live snapshot for one location
 Tests/NotchlineTests/

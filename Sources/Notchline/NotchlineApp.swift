@@ -1,16 +1,17 @@
 import SwiftUI
 import NotchlineCore
 
-// Placeholder shell so the bundle, signing and LSUIElement setup can be verified.
-// The real menu bar UI arrives in Phase 2 and the notch in Phase 3.
+// Menu bar agent. The notch arrives in Phase 3.
 @main
 struct NotchlineApp: App {
+    @StateObject private var appState = AppState()
+
     var body: some Scene {
-        MenuBarExtra("Notchline", systemImage: "snowflake") {
-            Text("Notchline \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")")
-            Divider()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q")
+        MenuBarExtra {
+            MenuContentView(appState: appState, model: appState.model)
+        } label: {
+            MenuBarLabel(model: appState.model)
         }
+        .menuBarExtraStyle(.window)
     }
 }
