@@ -10,6 +10,7 @@ struct PlannerSectionView: View {
     let now: Date
 
     @State private var selectedIndex = 0
+    @State private var showsScoreHelp = false
 
     private var timeZone: TimeZone { model.location.calendar.timeZone }
 
@@ -17,6 +18,9 @@ struct PlannerSectionView: View {
         if planner.locationID == model.location.id || planner.isPlanning {
             VStack(alignment: .leading, spacing: 8) {
                 header
+                if showsScoreHelp {
+                    ScoreHelpView()
+                }
                 content
                 if let record = planner.pendingRating, record.locationID == model.location.id {
                     ratingPrompt(record)
@@ -31,9 +35,25 @@ struct PlannerSectionView: View {
         days.isEmpty ? nil : days[min(selectedIndex, days.count - 1)]
     }
 
+    /// The full title when the day buttons leave room for it, the short one otherwise.
     private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            header(title: "Snow condition scores")
+            header(title: "Snow scores")
+        }
+    }
+
+    private func header(title: String) -> some View {
         HStack(alignment: .center, spacing: 4) {
-            Text("Ski day").font(.headline)
+            Text(title).font(.headline)
+            Button {
+                showsScoreHelp.toggle()
+            } label: {
+                Image(systemName: showsScoreHelp ? "questionmark.circle.fill" : "questionmark.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(showsScoreHelp ? "Hide what the scores mean" : "What the scores mean")
             Spacer()
             if planner.isPlanning {
                 ProgressView().controlSize(.small)
@@ -175,6 +195,24 @@ struct PlannerSectionView: View {
         }
         lines.append("Lift hours are typical, not this season's.")
         return lines.joined(separator: "\n")
+    }
+}
+
+/// What the scores mean and what goes into them. Shown inline rather than in a popover, since
+/// moving the pointer into a popover would collapse the notch.
+private struct ScoreHelpView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Each score, 0 to 100, rates the day's best window for groomed or ungroomed runs: the stretch of lift hours within 15 points of the day's peak. The higher of the two leads.")
+            Text("Every lift hour is scored from fresh snow not yet tracked out, snow quality from temperature, a refrozen rain crust, wind and gusts, and flat light from cloud, fog or falling snow. Rain, gusts over the lift-hold threshold or near-zero visibility zero out the hour.")
+            Text("Groomed runs depend mostly on temperature, surface, wind and light, and top out at 85 so a perfect corduroy day still ranks under a deep powder day. Ungroomed runs depend mostly on fresh snow, which gets tracked out faster on weekends, holidays and big powder days.")
+            Text("Confidence is how likely the score is to hold by the day itself.")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(8)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 
