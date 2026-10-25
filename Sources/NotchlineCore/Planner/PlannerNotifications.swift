@@ -1,15 +1,13 @@
 import Foundation
 
-/// A Mac notification the planner wants delivered. The app hands these to UNUserNotificationCenter,
-/// replacing every pending planner notification after each plan.
+/// A notification the planner wants delivered. The Mac hands these to UNUserNotificationCenter and
+/// Android to alarms, replacing every pending planner notification after each plan.
 public struct PlannerNotification: Equatable, Sendable {
     public enum Kind: String, Sendable {
         /// The evening before a day that crosses the score threshold.
         case summary
         /// Ahead of the recommended departure.
         case departure
-        /// After last chair on a day that crossed the threshold, asking for a rating.
-        case rating
     }
 
     /// Stable for a kind, location and day, so a later plan replaces it.
@@ -26,14 +24,12 @@ public struct PlannerNotification: Equatable, Sendable {
 public enum PlannerNotifications {
     /// Every planner notification ID starts with this, so the app can remove only its own.
     public static let idPrefix = "planner."
-    /// The rating question waits this long after last chair, for the drive home.
-    static let ratingDelay: TimeInterval = 60 * 60
 
     /// The notifications for the selected location's plan. Summaries fire at the evening summary
-    /// time (in `userCalendar`, the Mac's) the day before; departure reminders fire the reminder
-    /// lead before leaving; the rating question uses today's morning plan from `today`, since by
-    /// last chair the live plan no longer scores today. Only times still ahead of `now`.
-    public static func schedule(_ plan: SkiDayPlan, today: PlannerDayRecord?, location: Location, settings: PlannerSettings,
+    /// time (in `userCalendar`, the Mac's or the phone's) the day before; departure reminders fire
+    /// the reminder lead before leaving. Only times still ahead of `now`. Nothing asks for
+    /// ratings: whether the user skied doesn't follow from the score, so they rate when they choose.
+    public static func schedule(_ plan: SkiDayPlan, location: Location, settings: PlannerSettings,
                                 now: Date, userCalendar: Calendar = .current, locale: Locale = .current) -> [PlannerNotification] {
         guard settings.isEnabled else { return [] }
         let calendar = location.calendar
@@ -59,6 +55,9 @@ public enum PlannerNotifications {
                             leave += ", " + PlannerFormat.overnight(overnight, now: fireAt, timeZone: timeZone, locale: locale)
                         }
                         lines.append(leave + ".")
+                    } else {
+                        // No home on the Mac, or Android, which leaves the drive to Google Maps.
+                        lines.append("On the lift by \(PlannerFormat.time(window.interval.start, timeZone: timeZone, locale: locale)).")
                     }
                     if let confidence = day.score.confidence?.confidence(best) {
                         lines.append("Confidence \(confidence.percent)%.")
@@ -82,16 +81,6 @@ public enum PlannerNotifications {
             }
         }
 
-        if let today, today.rating == nil, calendar.isDate(today.day, inSameDayAs: now),
-           let morning = today.morning, let score = today.morningScore, score >= threshold {
-            let fireAt = morning.plan.score.liftHours.end.addingTimeInterval(ratingDelay)
-            if fireAt > now {
-                notifications.append(PlannerNotification(
-                    id: "\(idPrefix)rating.\(location.id).\(PlannerArchive.dayKey(today.day, calendar: calendar))", kind: .rating,
-                    locationID: location.id, day: today.day, fireAt: fireAt, title: "Did you ski \(location.name) today?",
-                    body: "Rate the groomers and the ungroomed snow so the planner learns what you like."))
-            }
-        }
         return notifications.sorted { $0.fireAt < $1.fireAt }
     }
 }

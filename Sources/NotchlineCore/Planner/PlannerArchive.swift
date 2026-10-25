@@ -1,9 +1,10 @@
 import Foundation
 
-/// How the user rated a day the planner scored. Ratings are 1 to 5 and given only for the terrain
-/// they skied. The training data for learned weights (Phase 6).
+/// How the user rated a day they skied. Ratings are 1 to 5 and given only for the terrain they
+/// skied. The training data for learned weights (Phase 6).
 public struct DayRating: Codable, Equatable, Sendable {
-    /// False when the user said they didn't ski that day, which stops the planner asking.
+    /// False only in records from when the app asked "Did you ski?" and the user said no. The app
+    /// no longer asks, so new ratings are all true.
     public var skied: Bool
     public var groomed: Int?
     public var ungroomed: Int?
@@ -21,10 +22,6 @@ public struct DayRating: Codable, Equatable, Sendable {
         self.leftHomeAt = leftHomeAt
         self.onLiftAt = onLiftAt
         self.ratedAt = ratedAt
-    }
-
-    public static func didNotSki(at date: Date) -> DayRating {
-        DayRating(skied: false, ratedAt: date)
     }
 
     public func rating(_ terrain: Terrain) -> Int? {
@@ -137,20 +134,19 @@ public struct PlannerArchive: Sendable {
         }
     }
 
-    /// The day to ask "Did you ski?" about: today once its last chair has passed, otherwise
-    /// yesterday. Only days with a morning plan and no rating yet.
-    public func pendingRating(location: Location, now: Date) throws -> PlannerDayRecord? {
+    /// How many days, today included, the user can pick from to rate.
+    public static let ratableDayCount = 7
+
+    /// Today and the days before it, `count` in all, newest first, for rating a day when the user
+    /// chooses. Days with no stored record come back as empty ones, since the user may have skied
+    /// a day the planner never planned.
+    public func recentDays(location: Location, now: Date, count: Int = ratableDayCount) throws -> [PlannerDayRecord] {
         let calendar = location.calendar
         let today = calendar.startOfDay(for: now)
-        if let record = try load(locationID: location.id, day: today, calendar: calendar), let morning = record.morning {
-            if now >= morning.plan.score.liftHours.end { return record.rating == nil ? record : nil }
-        } else if let lastChair = location.liftInterval(on: now)?.end, now >= lastChair {
-            return nil
+        return try (0..<count).map { back in
+            let day = calendar.date(byAdding: .day, value: -back, to: today)!
+            return try load(locationID: location.id, day: day, calendar: calendar) ?? PlannerDayRecord(locationID: location.id, day: day)
         }
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
-        guard let record = try load(locationID: location.id, day: yesterday, calendar: calendar),
-              record.morning != nil, record.rating == nil else { return nil }
-        return record
     }
 
     /// Sets the rating on the stored record for that day.
@@ -181,5 +177,31 @@ public struct PlannerArchive: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+}
+
+/// The strings for rating one of the `recentDays`.
+public struct RatingPrompt: Codable, Equatable, Sendable {
+    /// Local midnight of the day, to hand back with the rating.
+    public let day: Date
+    /// `Today`, `Yesterday`, then the short weekday, for picking the day.
+    public let dayLabel: String
+    /// `How was Mt. Baker Ski Area on Sunday, Oct 25?`
+    public let title: String
+    /// What the planner forecast that morning, and how to rate.
+    public let note: String
+
+    public init(_ record: PlannerDayRecord, location: Location, now: Date, locale: Locale = .current) {
+        day = record.day
+        let calendar = location.calendar
+        let back = calendar.dateComponents([.day], from: record.day, to: calendar.startOfDay(for: now)).day ?? 0
+        dayLabel = back == 0 ? "Today" : back == 1 ? "Yesterday" : PlannerFormat.dayName(record.day, now: now, calendar: calendar, locale: locale)
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = location.calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("EEEEMMMd")
+        title = "How was \(location.name) on \(formatter.string(from: record.day))?"
+        let rate = "Rate only what you skied, 1 for poor to 5 for great."
+        note = record.morning.map { "The planner forecast \(PlannerFormat.scores($0.plan.score)). \(rate)" } ?? rate
     }
 }

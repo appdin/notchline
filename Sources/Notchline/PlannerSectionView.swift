@@ -2,7 +2,7 @@ import NotchlineCore
 import SwiftUI
 
 /// The ski day planner: a day picker, both scores, the best window and departure for each
-/// terrain, confidence, and the "Did you ski?" question once a scored day is over.
+/// terrain, confidence, and a link to rate a recent day, which nothing asks for.
 struct PlannerSectionView: View {
     @ObservedObject var planner: PlannerModel
     @ObservedObject var model: ConditionsModel
@@ -20,9 +20,9 @@ struct PlannerSectionView: View {
                     ScoreHelpView()
                 }
                 content
-                if let record = planner.pendingRating, record.locationID == model.location.id {
-                    ratingPrompt(record)
-                }
+                Button("Rate a day you skied…") { actions.rateADay() }
+                    .buttonStyle(.link)
+                    .font(.caption)
             }
         }
     }
@@ -135,21 +135,6 @@ struct PlannerSectionView: View {
             }
         }
         .help(summary?.warnings.joined(separator: "\n") ?? "")
-    }
-
-    private func ratingPrompt(_ record: PlannerDayRecord) -> some View {
-        let when = model.location.calendar.isDate(record.day, inSameDayAs: now) ? "today" : "yesterday"
-        return HStack(spacing: 6) {
-            Image(systemName: "star.bubble")
-                .foregroundStyle(.secondary)
-            Text("Did you ski \(model.location.shortName) \(when)?")
-                .font(.caption)
-            Spacer()
-            Button("Rate…") { actions.rate(record) }
-            Button("No") { actions.didNotSki(record) }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
     }
 }
 

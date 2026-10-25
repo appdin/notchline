@@ -1,7 +1,9 @@
 package com.appdin.notchline
 
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.net.Uri
+import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,30 +47,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.appdin.notchline.core.AppSettings
 import com.appdin.notchline.core.AvalancheSummary
 import com.appdin.notchline.core.CatalogLocation
 import com.appdin.notchline.core.CatalogRegion
 import com.appdin.notchline.core.ConditionsSummary
 import com.appdin.notchline.core.MetricState
 import com.appdin.notchline.core.MetricSummary
+import com.appdin.notchline.core.Rating
 import com.appdin.notchline.core.UnitPreference
 
 /** Dimmed values match the Mac's opacity for stale, outdated and cached values. */
 private const val DIMMED_ALPHA = 0.45f
 
 /**
- * Header with the location picker and units menu, the snow, temperature and wind metrics, the
+ * Header with the location picker and settings menu, the snow, temperature and wind metrics, the
  * avalanche summary and the planner. Pull down to refresh. Tapping a value with problems in its last refresh
  * explains them, where the Mac shows a tooltip.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConditionsScreen(
-    state: ConditionsUiState,
-    onSelect: (CatalogLocation) -> Unit,
-    onUnits: (UnitPreference) -> Unit,
-    onRefresh: () -> Unit,
-) {
+fun ConditionsScreen(state: ConditionsUiState, actions: ScreenActions) {
     // A dialog's title and lines: a value's refresh problems, confidence notes or planner warnings.
     var explanation by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
     val showProblems: (List<String>) -> Unit = { explanation = "Last refresh" to it }
@@ -77,12 +76,12 @@ fun ConditionsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { LocationPicker(state.regions, state.location, onSelect) },
-                actions = { UnitsMenu(state.units, state.location, onUnits) },
+                title = { LocationPicker(state.regions, state.location, actions.select) },
+                actions = { SettingsMenu(state.settings, state.location, actions) },
             )
         },
     ) { padding ->
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.padding(padding).fillMaxSize()) {
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = actions.refresh, modifier = Modifier.padding(padding).fillMaxSize()) {
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -100,7 +99,7 @@ fun ConditionsScreen(
                     HorizontalDivider()
                     Avalanche(summary.avalanche, showProblems)
                     HorizontalDivider()
-                    PlannerSection(state) { title, lines -> explanation = title to lines }
+                    PlannerSection(state, actions) { title, lines -> explanation = title to lines }
                 }
             }
         }
@@ -146,26 +145,71 @@ private fun LocationPicker(regions: List<CatalogRegion>, selected: CatalogLocati
     }
 }
 
+/** What the screen can ask of the view model. */
+class ScreenActions(
+    val select: (CatalogLocation) -> Unit,
+    val refresh: () -> Unit,
+    val setUnits: (UnitPreference) -> Unit,
+    val setNotifyThreshold: (Int?) -> Unit,
+    val setSummaryTime: (String) -> Unit,
+    /** Opens the rating dialog for the location's recent days. */
+    val openRatings: () -> Unit,
+    val closeRatings: () -> Unit,
+    val rate: (Rating) -> Unit,
+)
+
+/** Units, and when the planner notifies: the score threshold and the evening summary time. */
 @Composable
-private fun UnitsMenu(units: UnitPreference, location: CatalogLocation, onUnits: (UnitPreference) -> Unit) {
+private fun SettingsMenu(settings: AppSettings, location: CatalogLocation, actions: ScreenActions) {
     var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     Box {
-        TextButton(onClick = { expanded = true }) { Text("Units") }
+        TextButton(onClick = { expanded = true }) { Text("Settings") }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            val labels = mapOf(
+            MenuHeading("Units")
+            mapOf(
                 UnitPreference.AUTOMATIC to "Automatic (${if (location.defaultUnitsMetric) "Metric" else "Imperial"})",
                 UnitPreference.IMPERIAL to "Imperial (in, °F, mph)",
                 UnitPreference.METRIC to "Metric (cm, °C, km/h)",
-            )
-            labels.forEach { (option, label) ->
+            ).forEach { (option, label) ->
                 DropdownMenuItem(
                     text = { Text(label) },
-                    leadingIcon = { RadioButton(selected = option == units, onClick = null) },
-                    onClick = { expanded = false; onUnits(option) },
+                    leadingIcon = { RadioButton(selected = option == settings.units, onClick = null) },
+                    onClick = { expanded = false; actions.setUnits(option) },
                 )
             }
+            HorizontalDivider()
+            MenuHeading("Notify for days scoring")
+            (AppSettings.THRESHOLD_OPTIONS.map<Int, Int?> { it } + null).forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option?.let { "$it or more" } ?: "Off") },
+                    leadingIcon = { RadioButton(selected = option == settings.notifyThreshold, onClick = null) },
+                    onClick = { expanded = false; actions.setNotifyThreshold(option) },
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Evening summary at ${settings.summaryTime}") },
+                enabled = settings.notifyThreshold != null,
+                onClick = {
+                    expanded = false
+                    val (hour, minute) = settings.summaryTime.split(":").map(String::toInt)
+                    TimePickerDialog(context, { _, h, m -> actions.setSummaryTime("%02d:%02d".format(h, m)) },
+                        hour, minute, DateFormat.is24HourFormat(context)).show()
+                },
+            )
         }
     }
+}
+
+@Composable
+private fun MenuHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 @Composable

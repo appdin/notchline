@@ -98,29 +98,16 @@ struct PlannerAppTests {
         #expect(try archive.load(locationID: location.id, day: date("2027-01-15T08:00:00Z"), calendar: pacific) == nil)
     }
 
-    @Test func asksAboutTodayAfterLastChairThenYesterday() async throws {
-        let lastChair = try #require(location.liftInterval(on: date("2027-01-12T20:00:00Z"))).end
+    @Test func ratingKeepsTheMorningPlanAndReplacesAnEarlierRating() async throws {
         let morning = try await plan(now: "2027-01-12T14:00:00Z")
         try archive.record(morning, hourly: snapshot().forecast!.hourly!, location: location, now: date("2027-01-12T14:00:00Z"))
+        let record = try #require(try archive.load(locationID: location.id, day: date("2027-01-12T08:00:00Z"), calendar: pacific))
 
-        #expect(try archive.pendingRating(location: location, now: date("2027-01-12T20:00:00Z")) == nil)
-        let evening = try #require(try archive.pendingRating(location: location, now: lastChair))
-        #expect(evening.day == date("2027-01-12T08:00:00Z"))
-        // Still asked the next morning, about yesterday.
-        #expect(try archive.pendingRating(location: location, now: date("2027-01-13T16:00:00Z"))?.day == evening.day)
-
-        try archive.rate(evening, DayRating(skied: true, groomed: 4, ratedAt: lastChair), calendar: pacific)
-        #expect(try archive.pendingRating(location: location, now: lastChair) == nil)
-        #expect(try archive.load(locationID: location.id, day: evening.day, calendar: pacific)?.rating?.groomed == 4)
-        #expect(try archive.load(locationID: location.id, day: evening.day, calendar: pacific)?.morning != nil)
-    }
-
-    @Test func didNotSkiStopsTheQuestion() async throws {
-        let morning = try await plan(now: "2027-01-12T14:00:00Z")
-        try archive.record(morning, hourly: snapshot().forecast!.hourly!, location: location, now: date("2027-01-12T14:00:00Z"))
-        let record = try #require(try archive.pendingRating(location: location, now: date("2027-01-13T02:00:00Z")))
-        try archive.rate(record, .didNotSki(at: date("2027-01-13T02:00:00Z")), calendar: pacific)
-        #expect(try archive.pendingRating(location: location, now: date("2027-01-13T16:00:00Z")) == nil)
+        try archive.rate(record, DayRating(skied: true, groomed: 4, ratedAt: date("2027-01-13T02:00:00Z")), calendar: pacific)
+        try archive.rate(record, DayRating(skied: true, ungroomed: 2, ratedAt: date("2027-01-13T03:00:00Z")), calendar: pacific)
+        let stored = try #require(try archive.load(locationID: location.id, day: record.day, calendar: pacific))
+        #expect(stored.rating?.groomed == nil && stored.rating?.ungroomed == 2)
+        #expect(stored.morning != nil)
     }
 
     // MARK: Model
@@ -128,18 +115,19 @@ struct PlannerAppTests {
     #if canImport(Combine)
     @Test func modelPlansRecordsAndRates() async throws {
         let model = PlannerModel(planner: planner(), archive: archive)
-        let lastChair = try #require(location.liftInterval(on: date("2027-01-12T20:00:00Z"))).end
-        let result = await model.update(snapshot: snapshot(), location: location, settings: settings(), now: date("2027-01-12T14:00:00Z"))
+        let now = date("2027-01-12T14:00:00Z")
+        let result = await model.update(snapshot: snapshot(), location: location, settings: settings(), now: now)
         #expect(result?.days.count == 4)
         #expect(model.plan == result)
         #expect(model.locationID == location.id)
         #expect(!model.isPlanning)
-        #expect(model.pendingRating == nil)
 
-        try model.refreshPendingRating(location: location, now: lastChair)
-        let record = try #require(model.pendingRating)
-        try model.rate(record, DayRating(skied: true, ungroomed: 2, ratedAt: lastChair), location: location, now: lastChair)
-        #expect(model.pendingRating == nil)
+        let days = try model.recentDays(location: location, now: now)
+        #expect(days.count == PlannerArchive.ratableDayCount)
+        let today = try #require(days.first)
+        #expect(today.morning != nil)
+        try model.rate(today, DayRating(skied: true, ungroomed: 2, ratedAt: now), location: location)
+        #expect(try model.recentDays(location: location, now: now).first?.rating?.ungroomed == 2)
 
         model.clear()
         #expect(model.plan == nil && model.locationID == nil)
@@ -152,7 +140,7 @@ struct PlannerAppTests {
         let now = date("2027-01-12T14:00:00Z")  // Tuesday 6:00 AM
         let result = try await plan(now: "2027-01-12T14:00:00Z")
         let notifications = PlannerNotifications.schedule(
-            result, today: nil, location: location, settings: settings(), now: now, userCalendar: pacific, locale: Locale(identifier: "en_US"))
+            result, location: location, settings: settings(), now: now, userCalendar: pacific, locale: Locale(identifier: "en_US"))
 
         let summaries = notifications.filter { $0.kind == .summary }
         // 7 PM Tuesday, Wednesday and Thursday, for the next day each.
@@ -171,38 +159,66 @@ struct PlannerAppTests {
         #expect(notifications.allSatisfy { $0.fireAt > now && $0.id.hasPrefix(PlannerNotifications.idPrefix) })
 
         // Below the threshold, or with the planner off, nothing.
-        #expect(PlannerNotifications.schedule(result, today: nil, location: location, settings: settings(threshold: 80), now: now, userCalendar: pacific).isEmpty)
+        #expect(PlannerNotifications.schedule(result, location: location, settings: settings(threshold: 80), now: now, userCalendar: pacific).isEmpty)
         var off = settings()
         off.isEnabled = false
-        #expect(PlannerNotifications.schedule(result, today: nil, location: location, settings: off, now: now, userCalendar: pacific).isEmpty)
+        #expect(PlannerNotifications.schedule(result, location: location, settings: off, now: now, userCalendar: pacific).isEmpty)
+    }
+
+    @Test func summaryWithoutADepartureGivesTheLiftTime() async throws {
+        let now = date("2027-01-12T14:00:00Z")
+        let result = try await plan(now: "2027-01-12T14:00:00Z", settings: settings(home: false))
+        let summary = try #require(PlannerNotifications.schedule(
+            result, location: location, settings: settings(home: false), now: now, userCalendar: pacific, locale: Locale(identifier: "en_US"))
+            .first { $0.kind == .summary })
+        #expect(summary.body == "On the lift by 9:00\u{202F}AM. Confidence 85%.")
     }
 
     @Test func pastTimesAreLeftOut() async throws {
         // 7:30 PM Tuesday: tonight's summary and today's reminder have passed.
         let result = try await plan(now: "2027-01-13T03:30:00Z")
         let notifications = PlannerNotifications.schedule(
-            result, today: nil, location: location, settings: settings(), now: date("2027-01-13T03:30:00Z"), userCalendar: pacific)
+            result, location: location, settings: settings(), now: date("2027-01-13T03:30:00Z"), userCalendar: pacific)
         #expect(notifications.filter { $0.kind == .summary }.map(\.day) == [date("2027-01-14T08:00:00Z"), date("2027-01-15T08:00:00Z")])
         #expect(notifications.first { $0.kind == .departure }?.day == date("2027-01-13T08:00:00Z"))
     }
 
-    @Test func asksForARatingAnHourAfterLastChair() async throws {
+    @Test func recentDaysIncludeUnplannedOnesNewestFirst() async throws {
+        let now = date("2027-01-13T20:00:00Z")  // Wednesday noon
+        let result = try await plan(now: "2027-01-12T14:00:00Z")
+        try archive.record(result, hourly: snapshot().forecast!.hourly!, location: location, now: date("2027-01-12T14:00:00Z"))
+
+        let days = try archive.recentDays(location: location, now: now, count: 3)
+        // Wednesday was recorded at lead 1, Tuesday has its morning plan, Monday was never planned.
+        #expect(days.map(\.day) == [date("2027-01-13T08:00:00Z"), date("2027-01-12T08:00:00Z"), date("2027-01-11T08:00:00Z")])
+        #expect(days[0].morning == nil && days[0].earlier.count == 1)
+        #expect(days[1].morning != nil)
+        #expect(days[2] == PlannerDayRecord(locationID: location.id, day: date("2027-01-11T08:00:00Z")))
+    }
+
+    @Test func nothingAsksForARating() async throws {
+        let now = date("2027-01-12T14:00:00Z")
+        let result = try await plan(now: "2027-01-12T14:00:00Z")
+        let notifications = PlannerNotifications.schedule(result, location: location, settings: settings(), now: now, userCalendar: pacific)
+        #expect(Set(notifications.map(\.kind)) == [.summary, .departure])
+    }
+
+    @Test func ratingPromptStrings() async throws {
         let now = date("2027-01-12T14:00:00Z")
         let result = try await plan(now: "2027-01-12T14:00:00Z")
         try archive.record(result, hourly: snapshot().forecast!.hourly!, location: location, now: now)
         let record = try #require(try archive.load(locationID: location.id, day: date("2027-01-12T08:00:00Z"), calendar: pacific))
-        let lastChair = try #require(location.liftInterval(on: now)).end
+        let en = Locale(identifier: "en_US")
 
-        let rating = try #require(PlannerNotifications.schedule(result, today: record, location: location, settings: settings(), now: now, userCalendar: pacific)
-            .first { $0.kind == .rating })
-        #expect(rating.fireAt == lastChair.addingTimeInterval(3600))
-        #expect(rating.title == "Did you ski Mt. Baker Ski Area today?")
+        let prompt = RatingPrompt(record, location: location, now: now, locale: en)
+        #expect(prompt.day == record.day)
+        #expect(prompt.dayLabel == "Today")
+        #expect(prompt.title == "How was Mt. Baker Ski Area on Tuesday, Jan 12?")
+        #expect(prompt.note == "The planner forecast 77 groomed, 35 ungroomed. Rate only what you skied, 1 for poor to 5 for great.")
+        #expect(RatingPrompt(record, location: location, now: now.addingTimeInterval(86400), locale: en).dayLabel == "Yesterday")
+        #expect(RatingPrompt(record, location: location, now: now.addingTimeInterval(3 * 86400), locale: en).dayLabel == "Tue")
 
-        var rated = record
-        rated.rating = .didNotSki(at: now)
-        #expect(!PlannerNotifications.schedule(result, today: rated, location: location, settings: settings(), now: now, userCalendar: pacific)
-            .contains { $0.kind == .rating })
-        #expect(!PlannerNotifications.schedule(result, today: record, location: location, settings: settings(threshold: 80), now: now, userCalendar: pacific)
-            .contains { $0.kind == .rating })
+        let unplanned = RatingPrompt(PlannerDayRecord(locationID: location.id, day: date("2027-01-11T08:00:00Z")), location: location, now: now, locale: en)
+        #expect(unplanned.note == "Rate only what you skied, 1 for poor to 5 for great.")
     }
 }

@@ -4,6 +4,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Refresh when the network comes back. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Evening-before summaries and the rating question. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- So the evening summary arrives at its time. The user grants it in Settings; without it alarms are inexact. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Alarms are cleared on reboot, so set them again. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Directions open in Google Maps when it is installed, otherwise in the browser. -->
+    <queries>
+        <package android:name="com.google.android.apps.maps" />
+    </queries>
 
     <application
         android:label="@string/app_name"
@@ -16,5 +27,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".PlannerAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".RestoreReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

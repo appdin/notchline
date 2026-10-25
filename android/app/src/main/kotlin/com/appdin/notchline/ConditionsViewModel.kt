@@ -1,18 +1,21 @@
 package com.appdin.notchline
 
 import android.app.Application
-import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.appdin.notchline.core.AppSettings
 import com.appdin.notchline.core.CatalogLocation
 import com.appdin.notchline.core.CatalogRegion
 import com.appdin.notchline.core.ConditionsSummary
+import com.appdin.notchline.core.LocationResponse
 import com.appdin.notchline.core.NotchlineCore
 import com.appdin.notchline.core.PlannerSummary
+import com.appdin.notchline.core.RatableDay
+import com.appdin.notchline.core.Rating
 import com.appdin.notchline.core.UnitPreference
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +27,7 @@ import kotlinx.coroutines.launch
 data class ConditionsUiState(
     val regions: List<CatalogRegion>,
     val location: CatalogLocation,
-    val units: UnitPreference,
+    val settings: AppSettings,
     val summary: ConditionsSummary? = null,
     val planner: PlannerSummary? = null,
     /** [location] was planned this session, so a null [planner] means there was nothing to plan from. */
@@ -32,6 +35,8 @@ data class ConditionsUiState(
     /** Stands in for a null [planner] once planned. */
     val plannerMessage: String? = null,
     val scoreHelp: List<String> = emptyList(),
+    /** The recent days to rate while the rating dialog is open, newest first. */
+    val ratingDays: List<RatableDay>? = null,
     /** True while this screen's own refresh of [location] runs, before the core reports it. */
     val refreshing: Boolean = false,
     val planning: Boolean = false,
@@ -40,21 +45,23 @@ data class ConditionsUiState(
 )
 
 /**
- * Screen state for the conditions screen. The core owns the snapshots, plans and their rules; this
- * holds the selection and units, and decides when to refresh: on launch, on location change, on
- * returning to the app after the refresh interval, and when the network comes back. Each refresh
- * replans, as on the Mac, and a location shown from the cache is planned from it.
+ * Screen state for the conditions screen. The core owns the snapshots, plans, ratings and their
+ * rules; this holds the selection and settings, and decides when to refresh: on launch, on
+ * location change, on returning to the app after the refresh interval, and when the network comes
+ * back. Each refresh replans, as on the Mac, and a location shown from the cache is planned from
+ * it. Each plan replaces the planner's notifications. `RefreshWorker` does the same in the
+ * background.
  */
 class ConditionsViewModel(application: Application) : AndroidViewModel(application) {
-    private val prefs = application.getSharedPreferences("notchline", Context.MODE_PRIVATE)
+    private val prefs = AppPreferences(application)
     private val regions = NotchlineCore.start(application)
     private val locations = regions.flatMap { it.locations }
 
     private val _state = MutableStateFlow(
         ConditionsUiState(
             regions = regions,
-            location = resolve(prefs.getString(SELECTED_LOCATION_KEY, null)),
-            units = UnitPreference.from(prefs.getString(UNITS_KEY, null)),
+            location = resolve(prefs.selectedLocationId),
+            settings = prefs.settings,
         )
     )
     val state: StateFlow<ConditionsUiState> = _state.asStateFlow()
@@ -82,6 +89,9 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
         // Starting offline gets no onLost, so the first onAvailable must count as coming back.
         networkWasDown = connectivity.activeNetwork == null
         connectivity.registerDefaultNetworkCallback(networkCallback)
+        // The background refresh goes by the stored selection, so store the default on first launch.
+        prefs.selectedLocationId = _state.value.location.id
+        RefreshWorker.enqueue(application)
         // Shows the cached snapshot at once. whileVisible starts the first refresh.
         viewModelScope.launch { reload() }
     }
@@ -92,9 +102,11 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
 
     fun select(location: CatalogLocation) {
         if (location.id == _state.value.location.id) return
-        prefs.edit().putString(SELECTED_LOCATION_KEY, location.id).apply()
+        prefs.selectedLocationId = location.id
         _state.update {
-            it.copy(location = location, summary = null, planner = null, planned = false, plannerMessage = null, refreshing = false, planning = false, error = null)
+            it.copy(
+                location = location, summary = null, planner = null, planned = false, plannerMessage = null,
+                ratingDays = null, refreshing = false, planning = false, error = null)
         }
         viewModelScope.launch {
             reload()
@@ -103,9 +115,55 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun setUnits(units: UnitPreference) {
-        prefs.edit().putString(UNITS_KEY, units.raw).apply()
-        _state.update { it.copy(units = units) }
+        update(_state.value.settings.copy(units = units))
         viewModelScope.launch { reload() }
+    }
+
+    /** null turns the planner's notifications off. */
+    fun setNotifyThreshold(threshold: Int?) {
+        update(_state.value.settings.copy(notifyThreshold = threshold))
+        viewModelScope.launch { plan(_state.value.location) }
+    }
+
+    /** `HH:mm` in the phone's time zone. */
+    fun setSummaryTime(time: String) {
+        update(_state.value.settings.copy(summaryTime = time))
+        viewModelScope.launch { plan(_state.value.location) }
+    }
+
+    /** Opens the rating dialog with the selected location's recent days. Nothing asks for ratings; the user rates when they choose. */
+    fun openRatings() {
+        val location = _state.value.location
+        viewModelScope.launch {
+            try {
+                val days = NotchlineCore.ratableDays(location.id, _state.value.settings)
+                _state.update { if (it.location.id == location.id) it.copy(ratingDays = days) else it }
+            } catch (error: IllegalStateException) {
+                fail(location, error)
+            }
+        }
+    }
+
+    fun closeRatings() {
+        _state.update { it.copy(ratingDays = null) }
+    }
+
+    /** Stores the rating and closes the dialog. */
+    fun rate(rating: Rating) {
+        val location = _state.value.location
+        closeRatings()
+        viewModelScope.launch {
+            try {
+                show(location, NotchlineCore.rate(location.id, _state.value.settings, rating))
+            } catch (error: IllegalStateException) {
+                fail(location, error)
+            }
+        }
+    }
+
+    private fun update(settings: AppSettings) {
+        prefs.settings = settings
+        _state.update { it.copy(settings = settings) }
     }
 
     /** Fetches the selected location. The core ignores a refresh while one for the location is running. */
@@ -130,15 +188,10 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private suspend fun reload() {
-        val (location, units) = _state.value.let { it.location to it.units }
+        val location = _state.value.location
         try {
-            val response = NotchlineCore.conditions(location.id, units)
-            _state.update {
-                if (it.location.id != location.id) return@update it
-                it.copy(
-                    summary = response.conditions, planner = response.planner, planned = response.planned,
-                    plannerMessage = response.plannerMessage, scoreHelp = response.scoreHelp, error = null)
-            }
+            val response = NotchlineCore.conditions(location.id, _state.value.settings)
+            show(location, response)
             if (!response.planned) viewModelScope.launch { plan(location) }
         } catch (error: IllegalStateException) {
             fail(location, error)
@@ -150,7 +203,7 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
         lastRefresh[location.id] = SystemClock.elapsedRealtime()
         _state.update { it.copy(refreshing = true) }
         try {
-            NotchlineCore.refresh(location.id, _state.value.units)
+            NotchlineCore.refresh(location.id, _state.value.settings)
             // Units may have changed during the fetch, so reread rather than show the returned summary.
             _state.update { if (it.location.id == location.id) it.copy(refreshing = false) else it }
             reload()
@@ -168,7 +221,11 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
         }
         _state.update { if (it.location.id == location.id) it.copy(planning = true) else it }
         try {
-            NotchlineCore.plan(location.id, _state.value.units)
+            val response = NotchlineCore.plan(location.id, _state.value.settings)
+            // Only the selected location gets notifications, as on the Mac.
+            if (location.id == prefs.selectedLocationId) {
+                response.notifications?.let { PlannerAlarms.replace(getApplication(), it, location) }
+            }
             _state.update { if (it.location.id == location.id) it.copy(planning = false) else it }
             reload()
         } catch (error: IllegalStateException) {
@@ -176,6 +233,15 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
         } finally {
             planning.remove(location.id)
             if (replan.remove(location.id)) viewModelScope.launch { plan(location) }
+        }
+    }
+
+    private fun show(location: CatalogLocation, response: LocationResponse) {
+        _state.update {
+            if (it.location.id != location.id) return@update it
+            it.copy(
+                summary = response.conditions, planner = response.planner, planned = response.planned,
+                plannerMessage = response.plannerMessage, scoreHelp = response.scoreHelp, error = null)
         }
     }
 
@@ -189,8 +255,6 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
 
     private companion object {
         const val TAG = "Notchline"
-        const val SELECTED_LOCATION_KEY = "selectedLocationID"
-        const val UNITS_KEY = "units"
         const val DEFAULT_LOCATION_ID = "mt-baker"
         /** The Mac's default refresh interval. */
         const val REFRESH_INTERVAL_MS = 30 * 60 * 1000L

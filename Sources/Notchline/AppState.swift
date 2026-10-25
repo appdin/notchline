@@ -131,7 +131,7 @@ final class AppState: ObservableObject {
         notch.setPinned(isPinned)
         updateLaunchAtLoginNote()
         plannerActions.appState = self
-        notifier.onOpen = { [weak self] kind, locationID, day in self?.openNotification(kind, locationID: locationID, day: day) }
+        notifier.onOpen = { [weak self] _, locationID, _ in self?.openNotification(locationID: locationID) }
 
         observeWake()
         observeNetwork()
@@ -159,45 +159,36 @@ final class AppState: ObservableObject {
         AboutPanel.show()
     }
 
-    /// Opens the rating window for a day the planner scored.
-    func showRating(_ record: PlannerDayRecord) {
-        guard let location = model.catalog.location(id: record.locationID) else { return }
-        ratingWindow.show(record: record, location: location) { [weak self] rating in
+    /// Opens the rating window for the selected location's recent days. Nothing asks for ratings;
+    /// the user rates a day when they choose to.
+    func showRatings() {
+        let location = model.location
+        let days: [PlannerDayRecord]
+        do {
+            days = try plannerModel.recentDays(location: location)
+        } catch {
+            logger.error("Could not read the days to rate: \(error, privacy: .public)")
+            return
+        }
+        guard !days.isEmpty else { return }
+        ratingWindow.show(days: days, location: location) { [weak self] record, rating in
             self?.saveRating(rating, for: record, location: location)
         }
-    }
-
-    /// "No" to "Did you ski today?", which stops the planner asking about that day.
-    func dismissRating(_ record: PlannerDayRecord) {
-        guard let location = model.catalog.location(id: record.locationID) else { return }
-        saveRating(.didNotSki(at: Date()), for: record, location: location)
     }
 
     private func saveRating(_ rating: DayRating, for record: PlannerDayRecord, location: Location) {
         do {
             try plannerModel.rate(record, rating, location: location)
-            logger.info("\(record.locationID, privacy: .public) rated: skied \(rating.skied), groomed \(rating.groomed ?? 0), ungroomed \(rating.ungroomed ?? 0)")
+            logger.info("\(record.locationID, privacy: .public) rated: groomed \(rating.groomed ?? 0), ungroomed \(rating.ungroomed ?? 0)")
         } catch {
             logger.error("Could not save the rating: \(error, privacy: .public)")
         }
-        // The rating question for that day is no longer needed.
-        replanSoon()
     }
 
-    private func openNotification(_ kind: PlannerNotification.Kind, locationID: String, day: Date) {
-        switch kind {
-        case .rating:
-            guard let location = model.catalog.location(id: locationID) else { return }
-            do {
-                guard let record = try plannerModel.record(location: location, day: day), record.rating == nil else { return }
-                showRating(record)
-            } catch {
-                logger.error("Could not read the day to rate: \(error, privacy: .public)")
-            }
-        case .summary, .departure:
-            if locationID != model.location.id { select(locationID) }
-            notch.showAlert()
-        }
+    /// A summary or departure reminder: show that location in the notch.
+    private func openNotification(locationID: String) {
+        if locationID != model.location.id { select(locationID) }
+        notch.showAlert()
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -288,14 +279,7 @@ final class AppState: ObservableObject {
         for warning in plan.warnings {
             logger.info("\(location.id, privacy: .public) planner warning: \(warning, privacy: .public)")
         }
-        let now = Date()
-        var today: PlannerDayRecord?
-        do {
-            today = try plannerModel.todayRecord(location: location, now: now)
-        } catch {
-            logger.error("Could not read today's plan record: \(error, privacy: .public)")
-        }
-        await notifier.replace(with: PlannerNotifications.schedule(plan, today: today, location: location, settings: planner, now: now))
+        await notifier.replace(with: PlannerNotifications.schedule(plan, location: location, settings: planner, now: Date()))
     }
 
     /// Expands the notch for a few seconds when new snow passes the alert threshold.
@@ -351,12 +335,8 @@ final class AppState: ObservableObject {
 final class PlannerActions {
     weak var appState: AppState?
 
-    func rate(_ record: PlannerDayRecord) {
-        appState?.showRating(record)
-    }
-
-    func didNotSki(_ record: PlannerDayRecord) {
-        appState?.dismissRating(record)
+    func rateADay() {
+        appState?.showRatings()
     }
 
     func showSettings() {

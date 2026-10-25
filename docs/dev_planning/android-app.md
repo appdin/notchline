@@ -14,13 +14,14 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 - **Platform code stays behind the core's existing seams.** The spike gated MapKit (`#if canImport(MapKit)`), Combine view models (`#if canImport(Combine)`) and added `FoundationNetworking` where `URLSession` lives on Android. `SkiDayPlanner.live(travel:)` takes any `TravelTimeProvider`.
 - **No drive times in the Android app. Google Maps does the drive.** The app doesn't estimate drive times or departures. Instead, each planned day has a button that opens Google Maps with driving directions to the resort already loaded (a Maps URL with `api=1`, `destination` set to the location's coordinate and `travelmode=driving`). Google Maps then gives the live ETA and handles navigation. Maps URLs can't set an arrive-by time, so the user checks the ETA in Maps against the lift time the app shows.
 - **Kotlin owns screen state; the core owns the rules behind it.** Decided in Phase 2. The Combine view models stay Mac only. What they did that Android needs moved into plain core types the Mac models now use too: `ConditionsCache` (the session's snapshots, cached versus refreshed, in-flight refreshes, saving to `SnapshotStore`) and `ConditionsSummary` (every display string, unit rule and stale, outdated and expiry rule of the conditions summary). Phase 3 did the same for the planner with `PlannerSummary`. Kotlin holds the selection and units and decides when to refresh and plan. This keeps the macOS 13 minimum.
-- **Snapshots live in the app's files directory.** Kotlin passes `filesDir/snapshots` to `configure`, which builds the `SnapshotStore` there, rather than relying on Foundation's Application Support mapping.
+- **Snapshots and planner records live in the app's files directory.** Kotlin passes `filesDir` to `configure`, which builds the `SnapshotStore` in `snapshots/` and the `PlannerArchive` in `planner/`, rather than relying on Foundation's Application Support mapping.
+- **Alarms deliver notifications; WorkManager refreshes.** Android has no scheduled notifications, so each planner notification is an alarm, exact when the user allows alarms and inexact otherwise. A 30 minute WorkManager job refreshes and replans the selected location in the background and replaces the alarms. Decided in Phase 4.
+- **Nothing asks for ratings, on Android or the Mac.** Decided in Phase 4. Whether someone skied doesn't follow from the score or from checking the conditions, so the "Did you ski?" question after every planned day and the rating notification after days over the threshold would nag. Both are gone from the core and both apps. The user rates one of the last seven days when they choose to.
 - **No departures on Android at all.** The departure planner (departure times, route-midpoint road weather, crowd buffers, the overnight option) and departure reminders are left out rather than approximated. The scores, best windows and confidence are unchanged. The only planner notification is the evening-before summary.
 
 ## Open questions
 
-- **Planner archive path.** `PlannerArchive` defaults to Application Support. Phase 4 should pass a path under `filesDir`, as Phase 2 does for snapshots.
-- **Background refresh.** WorkManager periodic work has a 15 minute floor and Samsung's battery optimization delays or drops it. The evening-before summary may need an exact alarm (`SCHEDULE_EXACT_ALARM`) to arrive at its set time.
+- **Samsung delivery.** Phase 4's alarms and WorkManager refresh worked on the emulator. Whether Samsung's default battery settings delay them, and whether the in-app battery note is enough, needs a real phone.
 
 ## Phases
 
@@ -30,7 +31,7 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 | 1 | Build setup: core as an Android library, Gradle project, Swift to Kotlin bridge, CI build | Done 2026-10-25, CI workflow not yet run |
 | 2 | Conditions: location picker, current conditions and avalanche danger on an app screen | Done 2026-10-25 |
 | 3 | Planner: scores, best windows and confidence, with a Google Maps directions button per day | Done 2026-10-25, Google Maps not yet tried on a device |
-| 4 | Background and notifications: periodic refresh, evening-before summaries, ratings | Not started |
+| 4 | Background and notifications: periodic refresh, evening-before summaries, ratings | Done 2026-10-25, not yet checked on a Samsung phone |
 | 5 | Widget: home screen widget showing the headline score and lift time | Not started |
 | 6 | Release: signing, sideloadable APK, optional Play Store listing | Not started |
 
@@ -96,8 +97,19 @@ As built:
 
 - Periodic refresh and replanning with WorkManager.
 - Evening-before summaries from `PlannerNotifications`, delivered through `NotificationManager`. Tapping one opens Google Maps directions for that day's location. With no departure, the summary gives the score and lift time without "leave at".
-- Day ratings after last chair, stored with the day's plan in `PlannerArchive`.
+- Day ratings, stored with the day's plan in `PlannerArchive`.
 - Check delivery on a Samsung device with default battery settings, and tell the user how to exempt the app if summaries arrive late.
+
+As built:
+
+- Core: an evening summary with no departure says "On the lift by 8:30 AM." where the departure would go, on the Mac without a home too. `RatingPrompt` holds the rating window's day label, title and forecast note. The rating notification, `PlannerArchive.pendingRating`, `PlannerModel.pendingRating` and `DayRating.didNotSki` are gone; `PlannerNotifications.schedule` no longer takes today's record. Tests in `PlannerAppTests.swift`.
+- Mac: the planner section in the notch and the menu has "Rate a day you skied…" in place of the question. It opens the rating window with a day picker over the selected location's last seven days, each starting from its stored rating and times. "I didn't ski" is gone, since the user opens the window only to rate. Tapping a summary or departure reminder still shows that location in the notch.
+- Bridge: `configure` takes `filesDir`. Each request also carries the phone's time zone (the summary time is in it) and the planner settings the app has, which decode into `PlannerSettings` with defaults for the rest. `plan` records the plan in the archive as the Mac's `PlannerModel` does and returns the evening summaries from `PlannerNotifications.schedule`. New calls: `ratableDays` lists the days to rate and `rate` stores a rating.
+- App: `AppPreferences` holds the selection, units, notification threshold (60 to 90, or off; 80 by default) and summary time (19:00 by default), shared by the screen and the worker. The Settings menu in the top bar replaces the units menu and adds the threshold and a summary time picker.
+- App: `PlannerAlarms` replaces every pending alarm after each plan of the selected location, keeps them in preferences, and sets them again after a reboot or update (`RestoreReceiver`). A summary notification opens Google Maps directions to that location, or the browser. `RefreshWorker` runs every 30 minutes with a network, refreshes and replans the selected location, and replaces the alarms.
+- Ratings: nothing asks. "Rate a day you skied" under the planner opens a dialog with today and the six days before it at the selected location (`PlannerArchive.recentDays`, the bridge's `ratableDays`). A day already rated is marked ✓ and starts from its rating, and saving replaces it. A day the planner never planned can be rated too, which stores a record with only the rating. Groomed and ungroomed go from 1 to 5. The Mac's optional left-home and on-lift times are left out. `RatingPrompt.dayLabel` gives the picker's Today, Yesterday and weekday names.
+- App: the notification permission is asked for once, when the first plan arrives with notifications on. Under the planner, notes with a Settings button appear when notifications are off, when exact alarms aren't allowed, and when battery optimization is on, which tells the user to set battery use to Unrestricted.
+- Checked on the API 36 emulator: the worker ran on first launch; at a threshold of 60 two Whistler summaries were scheduled for 19:00. Without the alarms permission Android gave them a one-hour window. With it (granted through adb) and the clock moved to 18:59:50, "Tomorrow at Whistler Blackcomb: 68 groomed, 32 ungroomed / On the lift by 8:30 AM. Confidence 93%." arrived at 19:00, and tapping it opened the directions URL. A reboot restored both alarms. In the rating dialog, today showed ✓ with its stored groomed 4, and rating yesterday, which was never planned, stored a record with only `ungroomed: 3`. Device tests: 181 passed. Mac tests: 202 passed. The Mac's rating window and planner link were built and tested but not looked at in the running app.
 
 ### Phase 5 - widget
 

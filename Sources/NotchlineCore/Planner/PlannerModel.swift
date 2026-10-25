@@ -2,7 +2,7 @@
 import Combine
 import Foundation
 
-/// The selected location's ski day plan and the day waiting for a rating. Free of UI and
+/// The selected location's ski day plan and the archive behind ratings. Free of UI and
 /// notifications so it can be tested; the app decides when to plan.
 @MainActor
 public final class PlannerModel: ObservableObject {
@@ -10,8 +10,6 @@ public final class PlannerModel: ObservableObject {
     /// The location `plan` is for.
     @Published public private(set) var locationID: String?
     @Published public private(set) var isPlanning = false
-    /// The day to ask "Did you ski?" about, if any.
-    @Published public private(set) var pendingRating: PlannerDayRecord?
 
     private let planner: SkiDayPlanner
     private let archive: PlannerArchive?
@@ -46,12 +44,6 @@ public final class PlannerModel: ObservableObject {
         }
         isPlanning = false
         plan = result
-        do {
-            try refreshPendingRating(location: location, now: now)
-        } catch {
-            result?.warnings.append("Could not read the day to rate (\(error))")
-            plan = result
-        }
         return result
     }
 
@@ -61,27 +53,17 @@ public final class PlannerModel: ObservableObject {
         plan = nil
         locationID = nil
         isPlanning = false
-        pendingRating = nil
     }
 
-    /// Clears the question when the record can't be read, then throws.
-    public func refreshPendingRating(location: Location, now: Date = Date()) throws {
-        pendingRating = nil
-        pendingRating = try archive?.pendingRating(location: location, now: now)
+    /// Today and the days before it at the location, newest first, for the user to pick one to rate.
+    /// Empty without an archive.
+    public func recentDays(location: Location, now: Date = Date()) throws -> [PlannerDayRecord] {
+        try archive?.recentDays(location: location, now: now) ?? []
     }
 
-    /// Today's stored record for the location, which the rating notification goes by.
-    public func todayRecord(location: Location, now: Date = Date()) throws -> PlannerDayRecord? {
-        try archive?.load(locationID: location.id, day: location.calendar.startOfDay(for: now), calendar: location.calendar)
-    }
-
-    public func record(location: Location, day: Date) throws -> PlannerDayRecord? {
-        try archive?.load(locationID: location.id, day: day, calendar: location.calendar)
-    }
-
-    public func rate(_ record: PlannerDayRecord, _ rating: DayRating, location: Location, now: Date = Date()) throws {
+    /// Stores the rating on the day's record, replacing any rating already there.
+    public func rate(_ record: PlannerDayRecord, _ rating: DayRating, location: Location) throws {
         try archive?.rate(record, rating, calendar: location.calendar)
-        try refreshPendingRating(location: location, now: now)
     }
 }
 #endif

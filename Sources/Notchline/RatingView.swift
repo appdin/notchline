@@ -2,29 +2,70 @@ import AppKit
 import NotchlineCore
 import SwiftUI
 
-/// Rates a day the planner scored: groomed, ungroomed or both from 1 to 5, and optionally when
-/// the user left home and got on the lift. Times are in the location's time zone.
+/// Rates one of the location's recent days, when the user chooses to: a day picker, then
+/// groomed, ungroomed or both from 1 to 5, and optionally when the user left home and got on the
+/// lift. Nothing asks for ratings. A day already rated starts from its rating, and saving
+/// replaces it. Times are in the location's time zone.
 struct RatingView: View {
+    /// Newest first, today included.
+    let days: [PlannerDayRecord]
+    let location: Location
+    let onSave: (PlannerDayRecord, DayRating) -> Void
+
+    @State private var selectedIndex = 0
+
+    var body: some View {
+        let record = days[min(selectedIndex, days.count - 1)]
+        let now = Date()
+        VStack(spacing: 0) {
+            Picker("Day", selection: $selectedIndex) {
+                ForEach(days.indices, id: \.self) { index in
+                    let prompt = RatingPrompt(days[index], location: location, now: now)
+                    Text(days[index].rating == nil ? prompt.dayLabel : "\(prompt.dayLabel) ✓").tag(index)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding([.horizontal, .top], 20)
+            // A new form per day, so each starts from that day's record.
+            DayRatingForm(record: record, location: location, prompt: RatingPrompt(record, location: location, now: now)) { rating in
+                onSave(record, rating)
+            }
+            .id(record.day)
+        }
+        .environment(\.timeZone, location.calendar.timeZone)
+        .frame(width: 420)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct DayRatingForm: View {
     let record: PlannerDayRecord
     let location: Location
+    let prompt: RatingPrompt
     let onSave: (DayRating) -> Void
 
     @State private var groomed: Int?
     @State private var ungroomed: Int?
-    @State private var includeLeftHome = false
+    @State private var includeLeftHome: Bool
     @State private var leftHomeAt: Date
-    @State private var includeOnLift = false
+    @State private var includeOnLift: Bool
     @State private var onLiftAt: Date
 
-    init(record: PlannerDayRecord, location: Location, onSave: @escaping (DayRating) -> Void) {
+    init(record: PlannerDayRecord, location: Location, prompt: RatingPrompt, onSave: @escaping (DayRating) -> Void) {
         self.record = record
         self.location = location
+        self.prompt = prompt
         self.onSave = onSave
+        let rating = record.rating
         let plan = record.morning?.plan
         let departure = plan?.score.best.flatMap { plan?.departure($0) }
         let firstChair = plan?.score.liftHours.start ?? ClockTime(hour: 9, minute: 0)!.date(on: record.day, calendar: location.calendar)
-        _leftHomeAt = State(initialValue: departure?.drive.leaveAt ?? firstChair.addingTimeInterval(-2 * 3600))
-        _onLiftAt = State(initialValue: departure?.liftTime ?? firstChair)
+        _groomed = State(initialValue: rating?.groomed)
+        _ungroomed = State(initialValue: rating?.ungroomed)
+        _includeLeftHome = State(initialValue: rating?.leftHomeAt != nil)
+        _leftHomeAt = State(initialValue: rating?.leftHomeAt ?? departure?.drive.leaveAt ?? firstChair.addingTimeInterval(-2 * 3600))
+        _includeOnLift = State(initialValue: rating?.onLiftAt != nil)
+        _onLiftAt = State(initialValue: rating?.onLiftAt ?? departure?.liftTime ?? firstChair)
     }
 
     var body: some View {
@@ -33,9 +74,9 @@ struct RatingView: View {
                 ratingPicker("Groomed", selection: $groomed)
                 ratingPicker("Ungroomed", selection: $ungroomed)
             } header: {
-                Text(title)
+                Text(prompt.title)
             } footer: {
-                Text(forecastNote)
+                Text(prompt.note)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -54,7 +95,6 @@ struct RatingView: View {
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Button("I didn't ski") { onSave(.didNotSki(at: Date())) }
                 Spacer()
                 Button("Save") {
                     onSave(DayRating(
@@ -67,9 +107,6 @@ struct RatingView: View {
             }
         }
         .formStyle(.grouped)
-        .environment(\.timeZone, location.calendar.timeZone)
-        .frame(width: 420)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func ratingPicker(_ title: String, selection: Binding<Int?>) -> some View {
@@ -79,28 +116,16 @@ struct RatingView: View {
         }
         .pickerStyle(.segmented)
     }
-
-    private var title: String {
-        let formatter = DateFormatter()
-        formatter.timeZone = location.calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate("EEEEMMMd")
-        return "How was \(location.name) on \(formatter.string(from: record.day))?"
-    }
-
-    private var forecastNote: String {
-        guard let score = record.morning?.plan.score else { return "Rate only what you skied, 1 for poor to 5 for great." }
-        return "The planner forecast \(PlannerFormat.scores(score)). Rate only what you skied, 1 for poor to 5 for great."
-    }
 }
 
-/// Hosts RatingView in its own window, opened from the notch, the menu or a notification.
+/// Hosts RatingView in its own window, opened from the planner section in the notch or the menu.
 @MainActor
 final class RatingWindowController {
     private var window: NSWindow?
 
-    func show(record: PlannerDayRecord, location: Location, onSave: @escaping (DayRating) -> Void) {
-        let view = RatingView(record: record, location: location) { [weak self] rating in
-            onSave(rating)
+    func show(days: [PlannerDayRecord], location: Location, onSave: @escaping (PlannerDayRecord, DayRating) -> Void) {
+        let view = RatingView(days: days, location: location) { [weak self] record, rating in
+            onSave(record, rating)
             self?.window?.close()
         }
         let controller = NSHostingController(rootView: view)
@@ -112,7 +137,7 @@ final class RatingWindowController {
             window.isReleasedWhenClosed = false
             self.window = window
         }
-        window?.title = "Rate \(location.shortName)"
+        window?.title = "Rate a day at \(location.shortName)"
         window?.center()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
