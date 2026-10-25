@@ -85,6 +85,12 @@ From either source:
 
 Each ski area in `locations.json` has typical weekday and weekend first and last chair times, taken from the resort's published hours. They don't track season dates, holidays, night skiing or day-to-day changes, so the planner presents them as typical. Where hours change through the season (Whistler closes at 3:00 PM early in the season and 4:00 PM by spring), the entry uses the early-season hours.
 
+## Drive times: Apple Maps
+
+The ski day planner gets drive times from Apple Maps through MapKit, which is free and needs no key. Each request asks for the drive that arrives at the lot by a given time, with Apple's predicted traffic for that time. The route's halfway point gives a second place to check road weather, from Open-Meteo at that point's own elevation. Home is sent only to Apple, as the start of the route.
+
+Apple gives one estimate per request, with no optimistic or pessimistic range, and applies current road closures. A closed access road gives no drive time rather than a wrong one, and the planner says so.
+
 ## Avalanche danger: NWAC and Avalanche Canada
 
 Avalanche danger comes straight from the regional avalanche center's forecast. Notchline only picks the right zone and day. Always read the full forecast before heading into avalanche terrain.

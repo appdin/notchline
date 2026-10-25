@@ -2,10 +2,11 @@ import Foundation
 import NotchlineCore
 
 // Debug command: fetch a live snapshot for one location and print it.
-// Usage: notchline-fetch [location-id] [--json]
+// Usage: notchline-fetch [location-id] [--json] [--home lat,lon]
 //        notchline-fetch [location-id] --score-history yyyy-MM-dd yyyy-MM-dd
 // --score-history scores every day in the range from Open-Meteo's archived forecasts and prints
 // one tab-separated line per day, for checking the planner against known storm days.
+// --home adds departure times from that point, with Apple Maps drive times and default settings.
 
 let args = CommandLine.arguments.dropFirst()
 let wantsJSON = args.contains("--json")
@@ -18,7 +19,8 @@ if args.contains("--list") {
     exit(0)
 }
 
-let positional = args.filter { !$0.hasPrefix("--") }
+let homeArgument = args.firstIndex(of: "--home").flatMap { args.index(after: $0) < args.endIndex ? args[args.index(after: $0)] : nil }
+let positional = args.filter { !$0.hasPrefix("--") && $0 != homeArgument }
 let requestedID = positional.first ?? LocationCatalog.defaultLocationID
 guard let location = catalog.location(id: requestedID) else {
     FileHandle.standardError.write(Data("Unknown location '\(requestedID)'. Use --list to see IDs.\n".utf8))
@@ -132,7 +134,34 @@ if let forecast = snapshot.forecast {
             let held = vetoes.isEmpty ? "" : "  vetoed: \(vetoes.joined(separator: ", "))"
             print("\(label)\(dayFormatter.string(from: day.day))  groomed \(describe(day.groomed))  ungroomed \(describe(day.ungroomed))  new \(ConditionsFormat.snow(day.newSnowInches, units))\(held)")
         }
-        for warning in scores.warnings { print("  ! planner: \(warning)") }
+        var plannerWarnings = scores.warnings
+        if let homeArgument {
+            let parts = homeArgument.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 2 else {
+                FileHandle.standardError.write(Data("--home takes lat,lon, for example 47.6062,-122.3321\n".utf8))
+                exit(1)
+            }
+            var settings = PlannerSettings.default
+            settings.home = Home(address: homeArgument, latitude: parts[0], longitude: parts[1])
+            let now = Date()
+            let planner = DeparturePlanner(
+                travel: CachedTravelTimes(MapKitTravelTimes()),
+                roadWeather: OpenMeteoProvider(http: RetryingHTTPClient(URLSessionHTTPClient())).roadWeather)
+            let plan = await planner.plan(scores, hourly: hourly, location: location, settings: settings, now: now)
+            plannerWarnings = plan.warnings
+            for (index, day) in plan.days.enumerated() {
+                for terrain in Terrain.allCases {
+                    guard let departure = day.departure(terrain) else { continue }
+                    let label = index == 0 && terrain == .groomed ? "  Depart     " : "             "
+                    let drive = departure.drive
+                    let extra = [drive.roadBuffer > 0 ? "+\(Int(drive.roadBuffer / 60)) min \(drive.roadCondition.rawValue)" : nil,
+                                 drive.crowdBuffer > 0 ? "+\(Int(drive.crowdBuffer / 60)) min crowd" : nil].compactMap { $0 }
+                    let overnight = departure.overnight.map { "; " + PlannerFormat.overnight($0, now: now, timeZone: location.calendar.timeZone) } ?? ""
+                    print("\(label)\(dayFormatter.string(from: day.score.day)) \(terrain.rawValue): \(PlannerFormat.advice(departure.advice(now: now), timeZone: location.calendar.timeZone)) for \(timeFormatter.string(from: departure.liftTime)) on the lift, \(Int(drive.driveTime / 60)) min drive\(extra.isEmpty ? "" : " " + extra.joined(separator: ", "))\(overnight)")
+                }
+            }
+        }
+        for warning in plannerWarnings { print("  ! planner: \(warning)") }
     }
     if let hours = location.liftInterval(on: Date()) {
         let formatter = DateFormatter()

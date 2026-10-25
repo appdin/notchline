@@ -13,7 +13,7 @@ struct ScoredDayFixtureTests {
         let start = date("\(first)T08:00:00Z")
         let end = date("\(last)T08:00:00Z").addingTimeInterval(24 * 3600)
         let response = try OpenMeteoProvider.parse(Fixture.data(fixture))
-        var hourly = try #require(OpenMeteoProvider.hourlyForecast(from: response, location: location, starts: Array(stride(from: start, to: end, by: 3600))))
+        var hourly = try #require(OpenMeteoProvider.hourlyForecast(from: response, calendar: location.calendar, starts: Array(stride(from: start, to: end, by: 3600))))
         edit(&hourly)
         let scores = SkiDayScorer.score(hourly, location: location, now: start, gustThresholdMph: gustThresholdMph ?? gust)
         return try #require(scores.days.last)
@@ -85,7 +85,7 @@ struct ScoredDayFixtureTests {
         let response = try OpenMeteoProvider.parse(Fixture.data("open_meteo_history_baker_powder_2025-02-25"))
         #expect(response.hourly.rain?.contains { ($0 ?? 0) > 0 } == true)
         let starts = Array(stride(from: date("2025-02-24T08:00:00Z"), to: date("2025-02-26T08:00:00Z"), by: 3600))
-        let hourly = try #require(OpenMeteoProvider.hourlyForecast(from: response, location: location, starts: starts))
+        let hourly = try #require(OpenMeteoProvider.hourlyForecast(from: response, calendar: location.calendar, starts: starts))
         for hour in hourly.hours where (hour.tempF ?? 99) < 32 {
             #expect((hour.rainInches ?? 0) == 0)
             #expect(!hour.precipitationTypes.contains(.rain))

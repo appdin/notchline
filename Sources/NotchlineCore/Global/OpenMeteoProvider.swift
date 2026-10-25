@@ -20,6 +20,7 @@ public struct OpenMeteoProvider: Sendable {
     }
 
     public var forecast: SnowForecastProvider { ForecastAdapter(provider: self) }
+    public var roadWeather: RoadWeatherProvider { RoadWeatherAdapter(provider: self) }
     public var modeledSnow: ObservedSnowProvider { ModeledSnowAdapter(provider: self) }
 
     func response(for location: Location, now: Date) async throws -> Response {
@@ -43,7 +44,7 @@ public struct OpenMeteoProvider: Sendable {
         let response = try Self.parse(try await http.get(components.url!))
         let start = calendar.startOfDay(for: firstDay)
         let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: lastDay))!
-        guard let hourly = Self.hourlyForecast(from: response, location: location, starts: Array(stride(from: start, to: end, by: 3600))) else {
+        guard let hourly = Self.hourlyForecast(from: response, calendar: calendar, starts: Array(stride(from: start, to: end, by: 3600))) else {
             throw ProviderError.noData("Open-Meteo historical forecast")
         }
         return hourly
@@ -59,16 +60,36 @@ public struct OpenMeteoProvider: Sendable {
     }
 
     static func queryItems(for location: Location) -> [URLQueryItem] {
+        queryItems(at: location.coordinate, elevationFt: location.forecastElevationFt, timeZone: location.timeZone)
+    }
+
+    /// Without an elevation, Open-Meteo uses the terrain's own height at the point.
+    static func queryItems(at coordinate: Coordinate, elevationFt: Int?, timeZone: String) -> [URLQueryItem] {
         [
-            URLQueryItem(name: "latitude", value: String(format: "%.4f", location.latitude)),
-            URLQueryItem(name: "longitude", value: String(format: "%.4f", location.longitude)),
-            URLQueryItem(name: "elevation", value: String(Int(Convert.meters(fromFeet: Double(location.forecastElevationFt)).rounded()))),
+            URLQueryItem(name: "latitude", value: String(format: "%.4f", coordinate.latitude)),
+            URLQueryItem(name: "longitude", value: String(format: "%.4f", coordinate.longitude)),
+        ] + (elevationFt.map { [URLQueryItem(name: "elevation", value: String(Int(Convert.meters(fromFeet: Double($0)).rounded())))] } ?? []) + [
             URLQueryItem(name: "hourly", value: hourlyFields.joined(separator: ",")),
             URLQueryItem(name: "timeformat", value: "unixtime"),
             // Days start at local midnight rather than UTC, so the last forecast day covers the
             // last planner day. Times stay Unix timestamps.
-            URLQueryItem(name: "timezone", value: location.timeZone),
+            URLQueryItem(name: "timezone", value: timeZone),
         ]
+    }
+
+    /// The planner's hourly series at a point on the drive, at the terrain's own elevation.
+    func roadHourly(at coordinate: Coordinate, calendar: Calendar, now: Date) async throws -> HourlyForecast {
+        var components = URLComponents(url: Self.baseURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = Self.queryItems(at: coordinate, elevationFt: nil, timeZone: calendar.timeZone.identifier) + [
+            URLQueryItem(name: "forecast_days", value: String(LocalTime.plannerDayCount)),
+        ]
+        let url = components.url!
+        let http = self.http
+        let response = try Self.parse(try await responses.value(for: url.absoluteString, now: now) { try await http.get(url) })
+        guard let hourly = Self.hourlyForecast(from: response, calendar: calendar, starts: LocalTime.plannerHours(from: now, calendar: calendar)) else {
+            throw ProviderError.noData("Open-Meteo road forecast")
+        }
+        return hourly
     }
 
     static let hourlyFields = [
@@ -194,7 +215,7 @@ public struct OpenMeteoProvider: Sendable {
                      gustMph: peakGust.map(Convert.mph(fromKMH:)),
                      directionDegrees: windDirection[index])
             },
-            hourly: hourlyForecast(from: response, location: location, starts: LocalTime.plannerHours(from: now, calendar: location.calendar))
+            hourly: hourlyForecast(from: response, calendar: location.calendar, starts: LocalTime.plannerHours(from: now, calendar: location.calendar))
         )
     }
 
@@ -207,7 +228,7 @@ public struct OpenMeteoProvider: Sendable {
     /// requested elevation, so rain is kept only in the share of the hour warm enough for it.
     /// Snowfall amounts are kept as given: against two seasons of SNOTEL depth they track storms
     /// best, though they run about half of what stations gain.
-    static func hourlyForecast(from response: Response, location: Location, starts: [Date]) -> HourlyForecast? {
+    static func hourlyForecast(from response: Response, calendar: Calendar, starts: [Date]) -> HourlyForecast? {
         let hourly = response.hourly
         func optional(_ name: String, _ values: [Double?]?) -> [Double?]? {
             values.flatMap { response.checked(name, $0) }
@@ -225,7 +246,7 @@ public struct OpenMeteoProvider: Sendable {
         let cloudCover = optional("cloud_cover", hourly.cloud_cover)
         let probability = optional("precipitation_probability", hourly.precipitation_probability)
         let indexByTime = Dictionary(hourly.time.indices.map { (hourly.time[$0], $0) }, uniquingKeysWith: { first, _ in first })
-        return HourlyForecast.build(starts: starts, calendar: location.calendar, source: sourceName) { start in
+        return HourlyForecast.build(starts: starts, calendar: calendar, source: sourceName) { start in
             let instant = indexByTime[start.timeIntervalSince1970]
             let following = indexByTime[start.timeIntervalSince1970 + 3600]
             func at(_ index: Int?, _ series: [Double?]?) -> Double? { index.flatMap { series?[$0] } }
@@ -311,6 +332,14 @@ public struct OpenMeteoProvider: Sendable {
 
         func fetch(for location: Location, now: Date) async throws -> SnowForecast {
             try OpenMeteoProvider.forecast(from: try await provider.response(for: location, now: now), location: location, now: now)
+        }
+    }
+
+    struct RoadWeatherAdapter: RoadWeatherProvider {
+        let provider: OpenMeteoProvider
+
+        func hourly(at coordinate: Coordinate, calendar: Calendar, now: Date) async throws -> HourlyForecast {
+            try await provider.roadHourly(at: coordinate, calendar: calendar, now: now)
         }
     }
 

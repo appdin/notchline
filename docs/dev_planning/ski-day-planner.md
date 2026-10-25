@@ -77,7 +77,7 @@ How likely the forecast is to hold, as a percentage. It drops as the day gets fu
 |---|---|---|
 | 1 | Settings and data: home address, per-location arrival to lift and overnight parking, typical lift hours in `locations.json`, hourly forecast series out to +3 days | Done 2026-10-25 |
 | 2 | Scoring: vetoes and weighted hourly groomed and ungroomed scores, best windows, fresh-snow decay, with fixture tests in `NotchlineCore` | Done 2026-10-25 |
-| 3 | Departure: MapKit ETA, road and crowd buffers, departure time for each score and day, overnight option | Not started |
+| 3 | Departure: MapKit ETA, road and crowd buffers, departure time for each score and day, overnight option | Done 2026-10-25 |
 | 4 | Confidence: rule-based in the app, then measured from history by a backtest script | Not started |
 | 5 | UI, notifications and ratings: planner section in the expanded notch, day picker, evening-before and leave-soon notifications, day ratings | Not started |
 | 6 | Learning: travel-time logging, then weights learned from ratings once there are enough | Not started |
@@ -129,6 +129,29 @@ Sanity check, Mt. Baker 2024-25 and 2025-26, 218 days with 30" or more at Wells 
 ### Phase 3 - departure
 
 MapKit sits behind a protocol so the scoring tests never call it. Cache ETAs per (day, target arrival), since MapKit's throttling isn't published.
+
+As built (`Sources/NotchlineCore/Planner/`):
+
+- `TravelTimeProvider` gives a drive time for an arrival and the route's halfway point. `MapKitTravelTimes` uses `MKDirections` `calculateETA` with `arrivalDate`, and `calculate` for the route. `CachedTravelTimes` keeps ETAs per (home, location, arrival) for an hour and midpoints for a day.
+- Destinations are the locations' existing coordinates. Apple's own map points for all seven resorts sit within about 200 m of them, so no separate parking coordinate was needed.
+- Road buffer: the worst condition over the drive's hours, sampled at the resort's hourly series and at the route midpoint. The midpoint comes from Open-Meteo at the terrain's own elevation (`RoadWeatherProvider`). The buffer is a share of the drive time, rounded up to 5 minutes:
+
+  | Condition | Buffer |
+  |---|---|
+  | Below freezing | 10% |
+  | Snow (0.1"/h, or likely snow) | 30% |
+  | Heavy snow (1"/h) | 50% |
+  | Freezing rain | 50% |
+
+- Crowd buffer: 20 minutes on days that draw a crowd (6" or more new), 30 on a busy day.
+- Tied best windows (`SkiDayScorer.bestWindows`) go to the shorter drive, then the earlier window.
+- Late: when the best window's departure is more than 5 minutes past, the planner finds the earliest lift time still reachable by leaving now, scores what's left of the day from there, and marks the departure with the missed lift time.
+- `Departure.advice(now:)`: "leave at" a clock time, "leave in N min" within an hour (rounded down to 5), "leave now" within 5 minutes either side, and "go anyway" once it has passed. `PlannerFormat` turns these into text. Departures round down to 5 minutes, and late lift times round up.
+- Overnight: with overnight parking on and a departure before 6 AM, a second drive reaches the lot by 9 PM the evening before, with no crowd buffer. It's dropped once that departure has passed. When that evening is before the forecast series starts (planning tomorrow from midnight on), the evening drive has no road weather.
+- Without a home there are scores but no departures, and one warning. A route Apple won't give (for example a road closure) is one warning per location, not one per day.
+- `notchline-fetch <id> --home lat,lon` prints each day's departures from live Apple Maps times.
+
+Found while building: Apple applies current closures to the route. On 2026-10-25 it refused Crystal ("current road conditions"). For Mt. Baker it first gave no ETA and a 6.7 hour detour on unpaved roads ending in a walk, then an ordinary 82 minutes later the same morning. Off-season closures will show up as missing departures with a warning. Absurd detours aren't detected yet; Phase 6's ETA log could flag them against the usual time.
 
 ### Phase 4 - confidence
 

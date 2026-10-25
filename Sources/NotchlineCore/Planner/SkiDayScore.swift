@@ -332,9 +332,16 @@ public enum SkiDayScorer {
     /// hour adds its score less (peak - margin), weighted by how much of it the lifts run.
     /// Hours well below the peak end the run. Ties keep the earlier window.
     static func bestWindow(_ hours: [HourScore], _ terrain: Terrain) -> ScoreWindow? {
-        guard let peak = hours.map({ $0.score(terrain) }).max(), peak > 0 else { return nil }
+        bestWindows(hours, terrain).first
+    }
+
+    /// Every window tied for the most gain, earliest first, so departure planning can pick the
+    /// shortest drive among them.
+    public static func bestWindows(_ hours: [HourScore], _ terrain: Terrain) -> [ScoreWindow] {
+        guard let peak = hours.map({ $0.score(terrain) }).max(), peak > 0 else { return [] }
         let cutoff = Double(peak - ScoringRules.windowMargin)
-        var best: (sum: Double, range: ClosedRange<Int>)?
+        var bestSum = 0.0
+        var ranges: [ClosedRange<Int>] = []
         var runStart = 0
         var runSum = 0.0
         for (index, hour) in hours.enumerated() {
@@ -345,16 +352,23 @@ public enum SkiDayScorer {
                 runSum = 0
             }
             runSum += gain
-            if runSum > (best?.sum ?? 0) { best = (runSum, runStart...index) }
+            if runSum > bestSum + 1e-9 {
+                bestSum = runSum
+                ranges = [runStart...index]
+            } else if abs(runSum - bestSum) <= 1e-9, bestSum > 0, !ranges.contains(where: { $0.lowerBound == runStart }) {
+                // A tie that starts later; one that only extends an earlier run adds nothing new.
+                ranges.append(runStart...index)
+            }
         }
-        guard let range = best?.range else { return nil }
-        let window = hours[range]
-        let duration = window.reduce(0) { $0 + $1.interval.duration }
-        let weighted = window.reduce(0) { $0 + Double($1.score(terrain)) * $1.interval.duration }
-        return ScoreWindow(
-            interval: DateInterval(start: window.first!.interval.start, end: window.last!.interval.end),
-            averageScore: Int((weighted / duration).rounded()),
-            peakScore: window.map { $0.score(terrain) }.max()!)
+        return ranges.map { range in
+            let window = hours[range]
+            let duration = window.reduce(0) { $0 + $1.interval.duration }
+            let weighted = window.reduce(0) { $0 + Double($1.score(terrain)) * $1.interval.duration }
+            return ScoreWindow(
+                interval: DateInterval(start: window.first!.interval.start, end: window.last!.interval.end),
+                averageScore: Int((weighted / duration).rounded()),
+                peakScore: window.map { $0.score(terrain) }.max()!)
+        }
     }
 }
 
