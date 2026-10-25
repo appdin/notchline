@@ -77,6 +77,20 @@ if let forecast = snapshot.forecast {
     } else {
         print("  Wind       unavailable")
     }
+    if let hours = forecast.hourly?.hours, let first = hours.first, let last = hours.last {
+        let formatter = DateFormatter()
+        formatter.timeZone = location.calendar.timeZone
+        formatter.dateFormat = "EEE HH:mm"
+        print("  Hourly     \(hours.count) hours, \(formatter.string(from: first.start)) to \(formatter.string(from: last.start))")
+    } else {
+        print("  Hourly     unavailable")
+    }
+    if let hours = location.liftInterval(on: Date()) {
+        let formatter = DateFormatter()
+        formatter.timeZone = location.calendar.timeZone
+        formatter.timeStyle = .short
+        print("  Lifts      \(formatter.string(from: hours.start)) to \(formatter.string(from: hours.end)) today (typical)")
+    }
 }
 if let danger = snapshot.danger(at: Date()) {
     let rating = danger.isExpired(at: Date()) ? "forecast expired"

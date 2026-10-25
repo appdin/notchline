@@ -69,3 +69,111 @@ public struct SnowAlert: Codable, Equatable, Sendable {
         return SnowAlert(locationID: snapshot.locationID, snow24hInches: snow, at: now)
     }
 }
+
+/// Where the user drives from, as entered and as geocoded on the Mac. Stored only in local
+/// preferences and sent only to Apple for geocoding and routing.
+public struct Home: Codable, Equatable, Sendable {
+    /// The address as the user typed it.
+    public var address: String
+    /// The geocoder's description of what it matched, shown so the user can check it.
+    public var matchedName: String?
+    public var latitude: Double
+    public var longitude: Double
+
+    public init(address: String, matchedName: String? = nil, latitude: Double, longitude: Double) {
+        self.address = address
+        self.matchedName = matchedName
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+}
+
+/// Ski day planner settings that differ by location.
+public struct LocationPlannerSettings: Codable, Equatable, Sendable {
+    /// Parking, gearing up, the walk and getting onto the first chair.
+    public var arrivalToLiftMinutes: Int
+    /// Whether the location allows parking overnight, which lets the planner suggest driving up the night before.
+    public var overnightParkingAllowed: Bool
+
+    public static let `default` = LocationPlannerSettings(arrivalToLiftMinutes: 20, overnightParkingAllowed: false)
+
+    public init(arrivalToLiftMinutes: Int, overnightParkingAllowed: Bool) {
+        self.arrivalToLiftMinutes = arrivalToLiftMinutes
+        self.overnightParkingAllowed = overnightParkingAllowed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.default
+        arrivalToLiftMinutes = try container.decodeIfPresent(Int.self, forKey: .arrivalToLiftMinutes) ?? defaults.arrivalToLiftMinutes
+        overnightParkingAllowed = try container.decodeIfPresent(Bool.self, forKey: .overnightParkingAllowed) ?? defaults.overnightParkingAllowed
+    }
+}
+
+/// Ski day planner settings, stored as one value so settings added later decode from older
+/// preferences with their defaults.
+public struct PlannerSettings: Codable, Equatable, Sendable {
+    public var isEnabled: Bool
+    public var home: Home?
+    /// Gusts above this close lifts, in mph. Hours above it score zero.
+    public var gustThresholdMph: Double
+    /// When the evening-before summary notification fires.
+    public var eveningSummaryTime: ClockTime
+    /// How long before the recommended departure the reminder fires.
+    public var departureReminderLeadMinutes: Int
+    /// Days scoring at least this (0 to 100) get notifications.
+    public var notificationScoreThreshold: Int
+    /// Keyed by location ID. Locations without an entry use `LocationPlannerSettings.default`.
+    public var locations: [String: LocationPlannerSettings]
+
+    public static let gustThresholdOptionsMph: [Double] = [35, 40, 45, 50, 55, 60]
+    public static let departureReminderLeadOptions = [15, 30, 45, 60]
+    public static let notificationScoreThresholdOptions = [60, 70, 80, 90]
+
+    public static let `default` = PlannerSettings(
+        isEnabled: true,
+        home: nil,
+        gustThresholdMph: 45,
+        eveningSummaryTime: ClockTime(hour: 19, minute: 0)!,
+        departureReminderLeadMinutes: 30,
+        notificationScoreThreshold: 80,
+        locations: [:])
+
+    public init(isEnabled: Bool, home: Home?, gustThresholdMph: Double, eveningSummaryTime: ClockTime, departureReminderLeadMinutes: Int, notificationScoreThreshold: Int, locations: [String: LocationPlannerSettings]) {
+        self.isEnabled = isEnabled
+        self.home = home
+        self.gustThresholdMph = gustThresholdMph
+        self.eveningSummaryTime = eveningSummaryTime
+        self.departureReminderLeadMinutes = departureReminderLeadMinutes
+        self.notificationScoreThreshold = notificationScoreThreshold
+        self.locations = locations
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.default
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? defaults.isEnabled
+        home = try container.decodeIfPresent(Home.self, forKey: .home)
+        gustThresholdMph = try container.decodeIfPresent(Double.self, forKey: .gustThresholdMph) ?? defaults.gustThresholdMph
+        eveningSummaryTime = try container.decodeIfPresent(ClockTime.self, forKey: .eveningSummaryTime) ?? defaults.eveningSummaryTime
+        departureReminderLeadMinutes = try container.decodeIfPresent(Int.self, forKey: .departureReminderLeadMinutes) ?? defaults.departureReminderLeadMinutes
+        notificationScoreThreshold = try container.decodeIfPresent(Int.self, forKey: .notificationScoreThreshold) ?? defaults.notificationScoreThreshold
+        locations = try container.decodeIfPresent([String: LocationPlannerSettings].self, forKey: .locations) ?? defaults.locations
+    }
+
+    /// Stored preferences, or the defaults when there are none.
+    public static func load(_ data: Data?) throws -> PlannerSettings {
+        guard let data else { return .default }
+        return try JSONDecoder().decode(PlannerSettings.self, from: data)
+    }
+
+    public func settings(for locationID: String) -> LocationPlannerSettings {
+        locations[locationID] ?? .default
+    }
+
+    public mutating func update(_ locationID: String, _ change: (inout LocationPlannerSettings) -> Void) {
+        var settings = settings(for: locationID)
+        change(&settings)
+        locations[locationID] = settings
+    }
+}

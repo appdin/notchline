@@ -1,4 +1,5 @@
 import AppKit
+import CoreLocation
 import Network
 import NotchlineCore
 import os
@@ -15,6 +16,7 @@ final class AppState: ObservableObject {
     static let snowAlertKey = "snowAlert"
     static let lastSnowAlertKey = "lastSnowAlert"
     static let menuBarTitleKey = "menuBarTitle"
+    static let plannerKey = "planner"
 
     static let refreshMinuteOptions = [15, 30, 60]
 
@@ -50,6 +52,19 @@ final class AppState: ObservableObject {
     @Published var menuBarTitle: MenuBarTitleStyle {
         didSet { defaults.set(menuBarTitle.rawValue, forKey: Self.menuBarTitleKey) }
     }
+
+    @Published var planner: PlannerSettings {
+        didSet {
+            do {
+                defaults.set(try JSONEncoder().encode(planner), forKey: Self.plannerKey)
+            } catch {
+                logger.error("Could not save the planner settings: \(error, privacy: .public)")
+            }
+        }
+    }
+
+    /// Progress or failure of the last home address lookup, shown under the address field.
+    @Published private(set) var homeLookupNote: String?
 
     /// Mirrors the login item's registration, which the system owns. The user can also remove it in System Settings.
     @Published private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -90,6 +105,12 @@ final class AppState: ObservableObject {
         units = defaults.string(forKey: Self.unitsKey).flatMap(UnitPreference.init) ?? .automatic
         snowAlert = defaults.string(forKey: Self.snowAlertKey).flatMap(SnowAlertLevel.init) ?? .default
         menuBarTitle = defaults.string(forKey: Self.menuBarTitleKey).flatMap(MenuBarTitleStyle.init) ?? .conditions
+        do {
+            planner = try PlannerSettings.load(defaults.data(forKey: Self.plannerKey))
+        } catch {
+            planner = .default
+            Logger(subsystem: "com.appdin.notchline", category: "refresh").error("Planner settings unreadable, using defaults: \(error, privacy: .public)")
+        }
         schedule.interval = TimeInterval(refreshMinutes * 60)
         model.unitPreference = units
         notch.setPinned(isPinned)
@@ -133,6 +154,27 @@ final class AppState: ObservableObject {
             logger.error("Launch at login \(enabled ? "register" : "unregister", privacy: .public) failed: \(error, privacy: .public)")
             launchAtLogin = SMAppService.mainApp.status == .enabled
             launchAtLoginNote = "Could not change launch at login: \(error.localizedDescription)"
+        }
+    }
+
+    /// Geocodes `address` with Apple's geocoder and stores it as home. An empty address clears home.
+    func setHome(address: String) {
+        let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !address.isEmpty else {
+            planner.home = nil
+            homeLookupNote = nil
+            return
+        }
+        guard address != planner.home?.address else { return }
+        homeLookupNote = "Looking up address…"
+        Task {
+            do {
+                planner.home = try await HomeGeocoder.geocode(address)
+                homeLookupNote = nil
+            } catch {
+                logger.notice("Home address lookup failed: \(error, privacy: .public)")
+                homeLookupNote = "Could not find that address. Home is unchanged."
+            }
         }
     }
 
@@ -202,5 +244,28 @@ final class AppState: ObservableObject {
             refreshNow()
         }
         networkWasDown = !satisfied
+    }
+}
+
+/// Forward geocoding through CLGeocoder, which sends the address to Apple. Needs no location permission.
+enum HomeGeocoder {
+    static func geocode(_ address: String) async throws -> Home {
+        try await withCheckedThrowingContinuation { continuation in
+            CLGeocoder().geocodeAddressString(address) { placemarks, error in
+                guard let placemark = placemarks?.first, let coordinate = placemark.location?.coordinate else {
+                    continuation.resume(throwing: error ?? CLError(.geocodeFoundNoResult))
+                    return
+                }
+                let matched = [placemark.name, placemark.locality, placemark.administrativeArea]
+                    .compactMap { $0 }
+                    .reduce(into: [String]()) { parts, part in if !parts.contains(part) { parts.append(part) } }
+                    .joined(separator: ", ")
+                continuation.resume(returning: Home(
+                    address: address,
+                    matchedName: matched.isEmpty ? nil : matched,
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude))
+            }
+        }
     }
 }

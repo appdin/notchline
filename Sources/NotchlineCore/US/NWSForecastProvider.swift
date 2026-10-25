@@ -1,6 +1,6 @@
 import Foundation
 
-/// Next-24h snowfall, temperature and wind from the National Weather Service gridpoint forecast.
+/// Next-24h snowfall, temperature, wind and the hourly planner series from the National Weather Service gridpoint forecast.
 /// https://www.weather.gov/documentation/services-web-api
 public struct NWSForecastProvider: SnowForecastProvider {
     private let http: HTTPClient
@@ -16,7 +16,7 @@ public struct NWSForecastProvider: SnowForecastProvider {
             let pointURL = URL(string: String(format: "https://api.weather.gov/points/%.4f,%.4f", location.latitude, location.longitude))!
             return try Self.parsePoint(try await http.get(pointURL))
         }
-        return try Self.parseGridpoint(try await http.get(gridURL), now: now)
+        return try Self.parseGridpoint(try await http.get(gridURL), now: now, calendar: location.calendar)
     }
 
     static func parsePoint(_ data: Data) throws -> URL {
@@ -27,7 +27,7 @@ public struct NWSForecastProvider: SnowForecastProvider {
         return try JSONDecoder().decode(Point.self, from: data).properties.forecastGridData
     }
 
-    static func parseGridpoint(_ data: Data, now: Date) throws -> SnowForecast {
+    static func parseGridpoint(_ data: Data, now: Date, calendar: Calendar) throws -> SnowForecast {
         let grid = try JSONDecoder().decode(Gridpoint.self, from: data).properties
         guard let snowfall = grid.snowfallAmount else {
             throw ProviderError.noData("snowfallAmount in NWS gridpoint")
@@ -58,6 +58,16 @@ public struct NWSForecastProvider: SnowForecastProvider {
         let windSpeed = series(grid.windSpeed, "windSpeed", unit: "wmoUnit:km_h-1", convert: mph)
         let windGust = series(grid.windGust, "windGust", unit: "wmoUnit:km_h-1", convert: mph)
         let windDirection = series(grid.windDirection, "windDirection", unit: "wmoUnit:degree_(angle)")
+        let hourlySeries = HourlySeries(
+            temperature: temperature,
+            snowfall: series(snowfall, "snowfallAmount", unit: "wmoUnit:mm", convert: Convert.inches(fromMM:)),
+            precipitation: series(grid.quantitativePrecipitation, "quantitativePrecipitation", unit: "wmoUnit:mm", convert: Convert.inches(fromMM:)),
+            precipitationProbability: series(grid.probabilityOfPrecipitation, "probabilityOfPrecipitation", unit: "wmoUnit:percent"),
+            snowLevel: series(grid.snowLevel, "snowLevel", unit: "wmoUnit:m", convert: Convert.feet(fromM:)),
+            visibility: series(grid.visibility, "visibility", unit: "wmoUnit:m", convert: Convert.miles(fromM:)),
+            skyCover: series(grid.skyCover, "skyCover", unit: "wmoUnit:percent"),
+            windSpeed: windSpeed, windGust: windGust, windDirection: windDirection,
+            weather: weatherSeries(grid.weather))
         return SnowForecast(
             next24hInches: Convert.inches(fromMM: totalMM),
             issuedAt: grid.updateTime.flatMap(parseISODate),
@@ -74,8 +84,57 @@ public struct NWSForecastProvider: SnowForecastProvider {
                     sustainedMph: sustained.value,
                     gustMph: peak(in: windGust, window: window)?.value,
                     directionDegrees: value(in: windDirection, at: max(now, sustained.interval.start)))
-            }
+            },
+            hourly: HourlyForecast.build(now: now, calendar: calendar, source: "NWS") { hourlySeries.hour(starting: $0) }
         )
+    }
+
+    /// Gridpoint layers converted to the model's units, sampled hour by hour for `HourlyForecast`.
+    struct HourlySeries {
+        let temperature, snowfall, precipitation, precipitationProbability, snowLevel, visibility, skyCover: [TimedValue]?
+        let windSpeed, windGust, windDirection: [TimedValue]?
+        let weather: [(interval: DateInterval, types: Set<PrecipitationType>)]
+
+        /// Amounts are prorated from the intervals overlapping the hour; other values are the
+        /// interval containing the hour's start.
+        func hour(starting start: Date) -> ForecastHour {
+            let hour = DateInterval(start: start, duration: 3600)
+            func at(_ series: [TimedValue]?) -> Double? { NWSForecastProvider.value(in: series, at: start) }
+            return ForecastHour(
+                start: start,
+                tempF: at(temperature),
+                snowfallInches: NWSForecastProvider.amount(in: snowfall, over: hour),
+                precipitationInches: NWSForecastProvider.amount(in: precipitation, over: hour),
+                precipitationProbability: at(precipitationProbability),
+                snowLevelFt: at(snowLevel),
+                visibilityMiles: at(visibility),
+                skyCoverPercent: at(skyCover),
+                wind: at(windSpeed).map { Wind(sustainedMph: $0, gustMph: at(windGust), directionDegrees: at(windDirection)) },
+                precipitationTypes: weather.first { $0.interval.start <= start && start < $0.interval.end }?.types ?? [])
+        }
+    }
+
+    /// Sum of the prorated amounts overlapping `window`. nil when no interval overlaps it.
+    static func amount(in series: [TimedValue]?, over window: DateInterval) -> Double? {
+        let overlapping = series?.filter { overlapFraction($0.interval, window) > 0 } ?? []
+        guard !overlapping.isEmpty else { return nil }
+        return overlapping.reduce(0) { $0 + $1.value * overlapFraction($1.interval, window) }
+    }
+
+    /// NWS weather types mapped to precipitation types. Types that are not precipitation (fog,
+    /// haze, smoke and the like) are left out by design.
+    static let precipitationTypes: [String: PrecipitationType] = [
+        "snow": .snow, "snow_showers": .snow,
+        "rain": .rain, "rain_showers": .rain, "drizzle": .rain,
+        "freezing_rain": .freezingRain, "freezing_drizzle": .freezingRain,
+        "sleet": .sleet,
+    ]
+
+    static func weatherSeries(_ layer: Gridpoint.WeatherLayer?) -> [(interval: DateInterval, types: Set<PrecipitationType>)] {
+        (layer?.values ?? []).compactMap { entry in
+            guard let interval = parseValidTime(entry.validTime) else { return nil }
+            return (interval, Set((entry.value ?? []).compactMap { $0.weather.flatMap { precipitationTypes[$0] } }))
+        }
     }
 
     /// A gridpoint layer's values with parsed intervals. nil when the layer is missing, empty or in another unit,
@@ -167,6 +226,12 @@ public struct NWSForecastProvider: SnowForecastProvider {
             let windSpeed: Layer?
             let windGust: Layer?
             let windDirection: Layer?
+            let snowLevel: Layer?
+            let visibility: Layer?
+            let skyCover: Layer?
+            let probabilityOfPrecipitation: Layer?
+            let quantitativePrecipitation: Layer?
+            let weather: WeatherLayer?
         }
         struct Measurement: Decodable {
             let unitCode: String
@@ -179,6 +244,18 @@ public struct NWSForecastProvider: SnowForecastProvider {
         struct Entry: Decodable {
             let validTime: String
             let value: Double?
+        }
+        /// The weather layer has no unit; each value lists the conditions forecast for its interval.
+        struct WeatherLayer: Decodable {
+            let values: [WeatherEntry]
+        }
+        struct WeatherEntry: Decodable {
+            let validTime: String
+            let value: [WeatherCondition]?
+        }
+        struct WeatherCondition: Decodable {
+            /// For example "snow_showers" or "rain". null when nothing is forecast.
+            let weather: String?
         }
         let properties: Properties
     }

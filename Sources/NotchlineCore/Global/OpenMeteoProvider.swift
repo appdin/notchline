@@ -32,13 +32,21 @@ public struct OpenMeteoProvider: Sendable {
             URLQueryItem(name: "latitude", value: String(format: "%.4f", location.latitude)),
             URLQueryItem(name: "longitude", value: String(format: "%.4f", location.longitude)),
             URLQueryItem(name: "elevation", value: String(Int(Convert.meters(fromFeet: Double(location.forecastElevationFt)).rounded()))),
-            URLQueryItem(name: "hourly", value: "snowfall,snow_depth,temperature_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m"),
+            URLQueryItem(name: "hourly", value: hourlyFields.joined(separator: ",")),
             URLQueryItem(name: "timeformat", value: "unixtime"),
+            // Days start at local midnight rather than UTC, so the last forecast day covers the
+            // last planner day. Times stay Unix timestamps.
+            URLQueryItem(name: "timezone", value: location.timeZone),
             URLQueryItem(name: "past_days", value: "1"),
-            URLQueryItem(name: "forecast_days", value: "3"),
+            URLQueryItem(name: "forecast_days", value: String(LocalTime.plannerDayCount)),
         ]
         return components.url!
     }
+
+    static let hourlyFields = [
+        "snowfall", "snow_depth", "temperature_2m", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
+        "precipitation", "rain", "showers", "freezing_level_height", "visibility", "cloud_cover", "precipitation_probability",
+    ]
 
     struct Response: Decodable {
         struct Hourly: Decodable {
@@ -55,6 +63,21 @@ public struct OpenMeteoProvider: Sendable {
             let wind_gusts_10m: [Double?]
             /// Degrees, direction the wind blows from.
             let wind_direction_10m: [Double?]
+            // Planner fields. Optional so a response without them still gives the main forecast.
+            /// mm, all types, summed over the preceding hour.
+            let precipitation: [Double?]?
+            /// mm, summed over the preceding hour.
+            let rain: [Double?]?
+            /// mm, summed over the preceding hour.
+            let showers: [Double?]?
+            /// m
+            let freezing_level_height: [Double?]?
+            /// m
+            let visibility: [Double?]?
+            /// %
+            let cloud_cover: [Double?]?
+            /// %, chance of more than 0.1 mm in the preceding hour.
+            let precipitation_probability: [Double?]?
         }
         let elevation: Double?
         /// Unit labels per hourly series, checked before converting.
@@ -65,6 +88,8 @@ public struct OpenMeteoProvider: Sendable {
         static let expectedUnits = [
             "snowfall": "cm", "snow_depth": "m", "temperature_2m": "°C",
             "wind_speed_10m": "km/h", "wind_gusts_10m": "km/h", "wind_direction_10m": "°",
+            "precipitation": "mm", "rain": "mm", "showers": "mm", "freezing_level_height": "m",
+            "visibility": "m", "cloud_cover": "%", "precipitation_probability": "%",
         ]
 
         /// The series values when its declared unit is the expected one, otherwise nil and a warning.
@@ -78,8 +103,11 @@ public struct OpenMeteoProvider: Sendable {
     static func parse(_ data: Data) throws -> Response {
         let response = try JSONDecoder().decode(Response.self, from: data)
         let count = response.hourly.time.count
-        let series = [response.hourly.snowfall.count, response.hourly.snow_depth.count, response.hourly.temperature_2m.count,
-                      response.hourly.wind_speed_10m.count, response.hourly.wind_gusts_10m.count, response.hourly.wind_direction_10m.count]
+        let hourly = response.hourly
+        let planner = [hourly.precipitation, hourly.rain, hourly.showers, hourly.freezing_level_height,
+                       hourly.visibility, hourly.cloud_cover, hourly.precipitation_probability].compactMap { $0?.count }
+        let series = [hourly.snowfall.count, hourly.snow_depth.count, hourly.temperature_2m.count,
+                      hourly.wind_speed_10m.count, hourly.wind_gusts_10m.count, hourly.wind_direction_10m.count] + planner
         guard count > 0, series.allSatisfy({ $0 == count }) else {
             throw ProviderError.unexpectedResponse("Open-Meteo hourly series lengths")
         }
@@ -137,8 +165,59 @@ public struct OpenMeteoProvider: Sendable {
                 Wind(sustainedMph: Convert.mph(fromKMH: windSpeed[index]!),
                      gustMph: peakGust.map(Convert.mph(fromKMH:)),
                      directionDegrees: windDirection[index])
-            }
+            },
+            hourly: hourlyForecast(from: response, snowfall: snowfall, temperature: temperature, windSpeed: windSpeed,
+                                   windGusts: windGusts, windDirection: windDirection, location: location, now: now)
         )
+    }
+
+    /// The planner's hourly series. Amounts, gusts and the precipitation chance cover the hour
+    /// before their timestamp, so the hour starting at `t` reads them from `t + 1h`; temperature
+    /// and the other instantaneous values come from `t`.
+    static func hourlyForecast(from response: Response, snowfall: [Double?], temperature: [Double?], windSpeed: [Double?],
+                               windGusts: [Double?], windDirection: [Double?], location: Location, now: Date) -> HourlyForecast? {
+        let hourly = response.hourly
+        func optional(_ name: String, _ values: [Double?]?) -> [Double?]? {
+            values.flatMap { response.checked(name, $0) }
+        }
+        let precipitation = optional("precipitation", hourly.precipitation)
+        let rain = optional("rain", hourly.rain)
+        let showers = optional("showers", hourly.showers)
+        let freezingLevel = optional("freezing_level_height", hourly.freezing_level_height)
+        let visibility = optional("visibility", hourly.visibility)
+        let cloudCover = optional("cloud_cover", hourly.cloud_cover)
+        let probability = optional("precipitation_probability", hourly.precipitation_probability)
+        let indexByTime = Dictionary(hourly.time.indices.map { (hourly.time[$0], $0) }, uniquingKeysWith: { first, _ in first })
+        return HourlyForecast.build(now: now, calendar: location.calendar, source: sourceName) { start in
+            let instant = indexByTime[start.timeIntervalSince1970]
+            let following = indexByTime[start.timeIntervalSince1970 + 3600]
+            func at(_ index: Int?, _ series: [Double?]?) -> Double? { index.flatMap { series?[$0] } }
+            let snowCM = at(following, snowfall)
+            // Rain is rain plus showers; either alone is enough to know there is none.
+            let rainMM: Double? = switch (at(following, rain), at(following, showers)) {
+            case (nil, nil): nil
+            case let (rain, showers): (rain ?? 0) + (showers ?? 0)
+            }
+            var types: Set<PrecipitationType> = []
+            if let snowCM, snowCM > 0 { types.insert(.snow) }
+            if let rainMM, rainMM > 0 { types.insert(.rain) }
+            return ForecastHour(
+                start: start,
+                tempF: at(instant, temperature).map(Convert.fahrenheit(fromC:)),
+                snowfallInches: snowCM.map(Convert.inches(fromCM:)),
+                precipitationInches: at(following, precipitation).map(Convert.inches(fromMM:)),
+                rainInches: rainMM.map(Convert.inches(fromMM:)),
+                precipitationProbability: at(following, probability),
+                freezingLevelFt: at(instant, freezingLevel).map(Convert.feet(fromM:)),
+                visibilityMiles: at(instant, visibility).map(Convert.miles(fromM:)),
+                skyCoverPercent: at(instant, cloudCover),
+                wind: at(instant, windSpeed).map {
+                    Wind(sustainedMph: Convert.mph(fromKMH: $0),
+                         gustMph: at(following, windGusts).map(Convert.mph(fromKMH:)),
+                         directionDegrees: at(instant, windDirection))
+                },
+                precipitationTypes: types)
+        }
     }
 
     /// Modeled depth at the latest hour not after `now`, with the 24h change from the same hour yesterday.

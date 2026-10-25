@@ -19,6 +19,10 @@
         ]
       }
     },
+    "liftHours": {
+      "weekday": { "firstChair": "09:00", "lastChair": "15:30" },
+      "weekend": { "firstChair": "09:00", "lastChair": "15:30" }
+    },
     "links": [
       { "title": "Mt. Baker Ski Area", "url": "https://www.mtbaker.us" },
       { "title": "Wells Creek SNOTEL", "url": "https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=909" }
@@ -42,6 +46,10 @@
           { "triplet": "791:WA:SNTL", "name": "Stevens Pass", "elevationFt": 3940, "utcOffsetHours": -8 }
         ]
       }
+    },
+    "liftHours": {
+      "weekday": { "firstChair": "09:00", "lastChair": "16:00" },
+      "weekend": { "firstChair": "09:00", "lastChair": "16:00" }
     },
     "links": [
       { "title": "Stevens Pass", "url": "https://www.stevenspass.com" },
@@ -68,6 +76,10 @@
         ]
       }
     },
+    "liftHours": {
+      "weekday": { "firstChair": "09:00", "lastChair": "16:00" },
+      "weekend": { "firstChair": "09:00", "lastChair": "16:00" }
+    },
     "links": [
       { "title": "The Summit at Snoqualmie", "url": "https://www.summitatsnoqualmie.com" },
       { "title": "Olallie Meadows SNOTEL", "url": "https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=672" }
@@ -93,6 +105,10 @@
         ]
       }
     },
+    "liftHours": {
+      "weekday": { "firstChair": "09:00", "lastChair": "16:00" },
+      "weekend": { "firstChair": "08:30", "lastChair": "16:00" }
+    },
     "links": [
       { "title": "Crystal Mountain", "url": "https://www.crystalmountainresort.com" },
       { "title": "Morse Lake SNOTEL", "url": "https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=642" }
@@ -117,6 +133,10 @@
         ]
       }
     },
+    "liftHours": {
+      "weekday": { "firstChair": "08:30", "lastChair": "15:00" },
+      "weekend": { "firstChair": "08:30", "lastChair": "15:00" }
+    },
     "links": [
       { "title": "Whistler Blackcomb", "url": "https://www.whistlerblackcomb.com" }
     ]
@@ -134,6 +154,10 @@
     "forecastElevationFt": 5500,
     "avalancheCenter": null,
     "observedSnow": { "modeledOnly": {} },
+    "liftHours": {
+      "weekday": { "firstChair": "08:30", "lastChair": "16:00" },
+      "weekend": { "firstChair": "08:30", "lastChair": "16:00" }
+    },
     "links": [
       { "title": "Revelstoke Mountain Resort", "url": "https://www.revelstokemountainresort.com" }
     ]
@@ -151,6 +175,10 @@
     "forecastElevationFt": 5500,
     "avalancheCenter": null,
     "observedSnow": { "modeledOnly": {} },
+    "liftHours": {
+      "weekday": { "firstChair": "09:00", "lastChair": "16:00" },
+      "weekend": { "firstChair": "09:00", "lastChair": "16:00" }
+    },
     "links": [
       { "title": "Sun Peaks Resort", "url": "https://www.sunpeaksresort.com" }
     ]

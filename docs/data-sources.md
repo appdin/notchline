@@ -75,6 +75,14 @@ From either source:
 - **Next 24h** is the forecast snowfall for the 24 hours starting now.
 - **High and low** are the forecast high for today (tomorrow, once today's daytime has passed) and the forecast low for tonight.
 - **Wind** is the forecast sustained wind, gust and direction for the current hour, plus the strongest sustained wind and gust expected in the next 24 hours. SNOTEL wind sensors are rare and sit in sheltered spots, so the forecast is a better guide to wind on the hill.
+- **Hourly series** for the ski day planner, from midnight today through the end of the third day after: temperature, snowfall, total precipitation, chance of precipitation, visibility, cloud cover and wind for every hour. The two sources differ in a few fields:
+  - NWS gives the **snow level**, where rain turns to snow. Open-Meteo gives the **freezing level** instead, which is usually several hundred feet higher.
+  - NWS names the precipitation types it expects (snow, rain, freezing rain, sleet) at any coverage, from "slight chance" up. Open-Meteo gives rain and snowfall amounts, and the types come from whichever is above zero.
+  - NWS visibility covers only about the next 16 hours. Later hours have none.
+
+## Lift hours
+
+Each ski area in `locations.json` has typical weekday and weekend first and last chair times, taken from the resort's published hours. They don't track season dates, holidays, night skiing or day-to-day changes, so the planner presents them as typical. Where hours change through the season (Whistler closes at 3:00 PM early in the season and 4:00 PM by spring), the entry uses the early-season hours.
 
 ## Avalanche danger: NWAC and Avalanche Canada
 

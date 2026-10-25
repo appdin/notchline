@@ -106,8 +106,11 @@ public struct SnowForecast: Codable, Equatable, Sendable {
     public var windNow: Wind?
     /// Peak sustained speed and peak gust over the next 24 hours, each taken independently.
     public var windPeak24h: Wind?
+    /// Hour by hour from midnight today through the last planner day, for the ski day planner.
+    /// From the same source as the rest of the forecast, so the NWS to Open-Meteo fallback covers it too.
+    public var hourly: HourlyForecast?
 
-    public init(next24hInches: Double, issuedAt: Date?, gridElevationFt: Int?, sourceName: String, tempNowF: Double? = nil, high: ForecastTemp? = nil, low: ForecastTemp? = nil, windNow: Wind? = nil, windPeak24h: Wind? = nil) {
+    public init(next24hInches: Double, issuedAt: Date?, gridElevationFt: Int?, sourceName: String, tempNowF: Double? = nil, high: ForecastTemp? = nil, low: ForecastTemp? = nil, windNow: Wind? = nil, windPeak24h: Wind? = nil, hourly: HourlyForecast? = nil) {
         self.next24hInches = next24hInches
         self.issuedAt = issuedAt
         self.gridElevationFt = gridElevationFt
@@ -117,6 +120,90 @@ public struct SnowForecast: Codable, Equatable, Sendable {
         self.low = low
         self.windNow = windNow
         self.windPeak24h = windPeak24h
+        self.hourly = hourly
+    }
+}
+
+/// Hourly forecast series at the location's forecast elevation. Hours the source has no values
+/// for are left out, so the series can end early; `LocalTime.plannerHours` gives the full range.
+public struct HourlyForecast: Codable, Equatable, Sendable {
+    public var hours: [ForecastHour]
+
+    public init(hours: [ForecastHour]) {
+        self.hours = hours
+    }
+
+    /// Hours on the local day containing `day`.
+    public func hours(on day: Date, calendar: Calendar) -> [ForecastHour] {
+        hours.filter { calendar.isDate($0.start, inSameDayAs: day) }
+    }
+}
+
+/// One hour of forecast. Amounts are totals over the hour starting at `start`; everything else
+/// describes the hour as a whole. Each field is nil when the source has no value for that hour.
+public struct ForecastHour: Codable, Equatable, Sendable {
+    public var start: Date
+    public var tempF: Double?
+    public var snowfallInches: Double?
+    /// Liquid equivalent of all precipitation types.
+    public var precipitationInches: Double?
+    /// Rain and showers. Open-Meteo only; NWS reports rain through `precipitationTypes`.
+    public var rainInches: Double?
+    /// Chance of measurable precipitation, 0 to 100.
+    public var precipitationProbability: Double?
+    /// Elevation where precipitation changes from rain to snow. NWS only.
+    public var snowLevelFt: Double?
+    /// Elevation of 0 °C. Open-Meteo only. The snow level is usually several hundred feet below it.
+    public var freezingLevelFt: Double?
+    public var visibilityMiles: Double?
+    /// Cloud cover, 0 to 100.
+    public var skyCoverPercent: Double?
+    public var wind: Wind?
+    /// Types of precipitation forecast for the hour. NWS lists every type it mentions, at any
+    /// coverage ("chance", "likely"); Open-Meteo's come from nonzero rain and snowfall amounts.
+    public var precipitationTypes: Set<PrecipitationType>
+
+    public init(start: Date, tempF: Double? = nil, snowfallInches: Double? = nil, precipitationInches: Double? = nil, rainInches: Double? = nil, precipitationProbability: Double? = nil, snowLevelFt: Double? = nil, freezingLevelFt: Double? = nil, visibilityMiles: Double? = nil, skyCoverPercent: Double? = nil, wind: Wind? = nil, precipitationTypes: Set<PrecipitationType> = []) {
+        self.start = start
+        self.tempF = tempF
+        self.snowfallInches = snowfallInches
+        self.precipitationInches = precipitationInches
+        self.rainInches = rainInches
+        self.precipitationProbability = precipitationProbability
+        self.snowLevelFt = snowLevelFt
+        self.freezingLevelFt = freezingLevelFt
+        self.visibilityMiles = visibilityMiles
+        self.skyCoverPercent = skyCoverPercent
+        self.wind = wind
+        self.precipitationTypes = precipitationTypes
+    }
+
+    /// True when the hour has no values at all.
+    var isEmpty: Bool {
+        self == ForecastHour(start: start)
+    }
+}
+
+public enum PrecipitationType: String, Codable, Hashable, Sendable {
+    case snow, rain, freezingRain, sleet
+}
+
+extension HourlyForecast {
+    /// Builds the series over `LocalTime.plannerHours`, keeping hours with any value. Records a
+    /// warning when the source stops short of the last planner day.
+    static func build(now: Date, calendar: Calendar, source: String, hour: (Date) -> ForecastHour) -> HourlyForecast? {
+        let starts = LocalTime.plannerHours(from: now, calendar: calendar)
+        let hours = starts.map(hour).filter { !$0.isEmpty }
+        guard let last = hours.last else {
+            ProviderWarnings.record("\(source) has no hourly forecast")
+            return nil
+        }
+        // Short when the series stops before the last planner day's daytime ends.
+        let lastDaytimeHour = LocalTime.time(LocalTime.dayEndHour - 1, on: calendar.startOfDay(for: starts.last!), calendar)
+        if last.start < lastDaytimeHour {
+            ProviderWarnings.record("\(source) hourly forecast ends \(ISO8601DateFormatter().string(from: last.start)), short of the last planner day")
+        }
+        return HourlyForecast(hours: hours)
     }
 }
 

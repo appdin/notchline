@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var model: ConditionsModel
+    @State private var homeAddress = ""
 
     var body: some View {
         Form {
@@ -36,6 +37,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            plannerSection
             Section {
                 Toggle("Launch at login", isOn: Binding(get: { appState.launchAtLogin }, set: { appState.setLaunchAtLogin($0) }))
                 if let note = appState.launchAtLoginNote {
@@ -46,8 +48,67 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { homeAddress = appState.planner.home?.address ?? "" }
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var plannerSection: some View {
+        Section {
+            Toggle("Ski day planner", isOn: $appState.planner.isEnabled)
+            if appState.planner.isEnabled {
+                TextField("Home", text: $homeAddress, prompt: Text("Street address or town"))
+                    .onSubmit { appState.setHome(address: homeAddress) }
+                if let note = appState.homeLookupNote ?? appState.planner.home?.matchedName.map({ "Found: \($0)" }) {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Stepper(value: locationSetting(\.arrivalToLiftMinutes), in: 5...120, step: 5) {
+                    Text("Lot to lift at \(model.location.shortName): \(appState.planner.settings(for: model.location.id).arrivalToLiftMinutes) min")
+                }
+                Toggle("Overnight parking at \(model.location.shortName)", isOn: locationSetting(\.overnightParkingAllowed))
+                Picker("Lifts close in gusts over", selection: $appState.planner.gustThresholdMph) {
+                    ForEach(PlannerSettings.gustThresholdOptionsMph, id: \.self) { mph in
+                        Text("\(ConditionsFormat.speed(mph, model.units)) \(ConditionsFormat.windUnit(model.units))").tag(mph)
+                    }
+                }
+                Picker("Notify for days scoring", selection: $appState.planner.notificationScoreThreshold) {
+                    ForEach(PlannerSettings.notificationScoreThresholdOptions, id: \.self) { Text("\($0) or more").tag($0) }
+                }
+                DatePicker("Evening summary at", selection: eveningSummaryTime, displayedComponents: .hourAndMinute)
+                Picker("Remind me before leaving", selection: $appState.planner.departureReminderLeadMinutes) {
+                    ForEach(PlannerSettings.departureReminderLeadOptions, id: \.self) { Text("\($0) minutes").tag($0) }
+                }
+            }
+        } footer: {
+            if appState.planner.isEnabled {
+                Text("Press Return to look up home. It stays on this Mac and is sent only to Apple Maps. Lot to lift covers parking, gearing up and getting onto the first chair.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// A binding to one of the selected location's planner settings.
+    private func locationSetting<Value>(_ keyPath: WritableKeyPath<LocationPlannerSettings, Value>) -> Binding<Value> {
+        let id = model.location.id
+        return Binding(
+            get: { appState.planner.settings(for: id)[keyPath: keyPath] },
+            set: { value in appState.planner.update(id) { $0[keyPath: keyPath] = value } })
+    }
+
+    /// The summary time as a Date today, which is what DatePicker edits.
+    private var eveningSummaryTime: Binding<Date> {
+        Binding(
+            get: { appState.planner.eveningSummaryTime.date(on: Date(), calendar: .current) },
+            set: { date in
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                if let time = ClockTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0) {
+                    appState.planner.eveningSummaryTime = time
+                }
+            })
     }
 
     private var locationPicker: some View {

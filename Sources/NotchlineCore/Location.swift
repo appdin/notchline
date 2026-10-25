@@ -21,7 +21,32 @@ public struct Location: Codable, Identifiable, Hashable, Sendable {
     public let avalancheCenter: String?
     /// nil until a source is configured for this location.
     public let observedSnow: ObservedSnowSource?
+    /// Typical lift hours, for the ski day planner. nil where no lifts run. Season dates and
+    /// daily operations are not modeled, so the planner presents these as typical.
+    public let liftHours: LiftHours?
     public let links: [NamedLink]
+}
+
+/// First and last chair on weekdays and on weekends, in the location's local time.
+public struct LiftHours: Codable, Hashable, Sendable {
+    public let weekday: LiftDay
+    public let weekend: LiftDay
+
+    public init(weekday: LiftDay, weekend: LiftDay) {
+        self.weekday = weekday
+        self.weekend = weekend
+    }
+}
+
+public struct LiftDay: Codable, Hashable, Sendable {
+    public let firstChair: ClockTime
+    /// When the lifts stop loading, as resorts publish their hours.
+    public let lastChair: ClockTime
+
+    public init(firstChair: ClockTime, lastChair: ClockTime) {
+        self.firstChair = firstChair
+        self.lastChair = lastChair
+    }
 }
 
 public enum Country: String, Codable, Sendable {
@@ -41,6 +66,14 @@ extension Location {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: timeZone) ?? .current
         return calendar
+    }
+
+    /// Typical lift hours on the local day containing `day`, using the weekend hours on Saturday and Sunday.
+    public func liftInterval(on day: Date) -> DateInterval? {
+        guard let liftHours else { return nil }
+        let calendar = calendar
+        let hours = calendar.isDateInWeekend(day) ? liftHours.weekend : liftHours.weekday
+        return DateInterval(start: hours.firstChair.date(on: day, calendar: calendar), end: hours.lastChair.date(on: day, calendar: calendar))
     }
 
     /// Imperial in the US, metric in Canada. `UnitPreference` can override this.

@@ -20,7 +20,7 @@ struct NWSForecastProviderTests {
 
     @Test func offSeasonGridpointIsZeroWithElevation() throws {
         let forecast = try NWSForecastProvider.parseGridpoint(
-            Fixture.data("nws_gridpoint_sew_157_123_offseason"), now: date("2026-10-24T20:00:00Z"))
+            Fixture.data("nws_gridpoint_sew_157_123_offseason"), now: date("2026-10-24T20:00:00Z"), calendar: pacific)
         #expect(forecast.next24hInches == 0)
         #expect(forecast.gridElevationFt == 4265)
         #expect(forecast.issuedAt == date("2026-10-24T18:26:50Z"))
@@ -29,7 +29,7 @@ struct NWSForecastProviderTests {
 
     @Test func offSeasonGridpointHasTemperatureAndWind() throws {
         let forecast = try NWSForecastProvider.parseGridpoint(
-            Fixture.data("nws_gridpoint_sew_157_123_offseason"), now: date("2026-10-24T20:00:00Z"))
+            Fixture.data("nws_gridpoint_sew_157_123_offseason"), now: date("2026-10-24T20:00:00Z"), calendar: pacific)
         #expect(try #require(forecast.tempNowF).rounded() == 37)
         let high = try #require(forecast.high)
         #expect(high.tempF.rounded() == 40)
@@ -53,11 +53,11 @@ struct NWSForecastProviderTests {
             "maxTemperature": ("wmoUnit:degC", [("2026-01-07T15:00:00+00:00/PT13H", -2.0), ("2026-01-08T15:00:00+00:00/PT13H", -5.0)]),
             "minTemperature": ("wmoUnit:degC", [("2026-01-07T03:00:00+00:00/PT14H", -8.0), ("2026-01-08T03:00:00+00:00/PT14H", -10.0)]),
         ])
-        let evening = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-08T05:00:00Z"))
+        let evening = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-08T05:00:00Z"), calendar: pacific)
         #expect(evening.high?.tempF == 23)
         #expect(evening.high?.period.start == date("2026-01-08T15:00:00Z"))
         #expect(evening.low?.tempF == 14)
-        let afternoon = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-07T22:00:00Z"))
+        let afternoon = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-07T22:00:00Z"), calendar: pacific)
         #expect(afternoon.high?.tempF.rounded() == 28)
         #expect(afternoon.low?.tempF == 14)
     }
@@ -77,7 +77,7 @@ struct NWSForecastProviderTests {
             ]),
             "windDirection": ("wmoUnit:degree_(angle)", [("2026-01-07T00:00:00+00:00/PT6H", 180), ("2026-01-07T06:00:00+00:00/PT12H", 225)]),
         ])
-        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-07T02:00:00Z"))
+        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-07T02:00:00Z"), calendar: pacific)
         #expect(forecast.windNow == Wind(sustainedMph: 10, gustMph: 20, directionDegrees: 180))
         let peak = try #require(forecast.windPeak24h)
         #expect(abs(peak.sustainedMph - 25) < 0.0001)
@@ -91,7 +91,7 @@ struct NWSForecastProviderTests {
             "windGust": ("wmoUnit:km_h-1", []),
             "temperature": ("wmoUnit:degF", [("2026-01-07T00:00:00+00:00/PT6H", 20.0)]),  // unexpected unit
         ])
-        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-07T00:00:00Z"))
+        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-01-07T00:00:00Z"), calendar: pacific)
         #expect(forecast.next24hInches == 1)
         #expect(forecast.tempNowF == nil)
         #expect(forecast.high == nil)
@@ -108,7 +108,7 @@ struct NWSForecastProviderTests {
             ("2026-11-03T00:00:00+00:00/PT6H", 50.8),
             ("2026-11-03T06:00:00+00:00/PT6H", 254),
         ])
-        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-11-02T03:00:00Z"))
+        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-11-02T03:00:00Z"), calendar: pacific)
         #expect(abs(forecast.next24hInches - (0.5 + 2 + 1 + 1)) < 0.0001)
     }
 
@@ -117,13 +117,13 @@ struct NWSForecastProviderTests {
             ("2026-11-02T00:00:00+00:00/PT6H", nil),
             ("2026-11-02T06:00:00+00:00/PT6H", 25.4),
         ])
-        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-11-02T00:00:00Z"))
+        let forecast = try NWSForecastProvider.parseGridpoint(data, now: date("2026-11-02T00:00:00Z"), calendar: pacific)
         #expect(abs(forecast.next24hInches - 1) < 0.0001)
     }
 
     @Test func emptySnowfallThrows() {
         #expect(throws: ProviderError.noData("NWS snowfall forecast is empty")) {
-            try NWSForecastProvider.parseGridpoint(gridpoint([]), now: date("2026-11-02T00:00:00Z"))
+            try NWSForecastProvider.parseGridpoint(gridpoint([]), now: date("2026-11-02T00:00:00Z"), calendar: pacific)
         }
     }
 

@@ -50,10 +50,18 @@ public enum ConditionsFormat {
 
     /// Sustained speed with gusts when there are any, from mph: `15 G30`, `5`, in km/h for metric.
     public static func wind(_ wind: Wind, _ units: UnitSystem = .imperial) -> String {
-        let speed = { units == .metric ? Convert.kmh(fromMPH: $0) : $0 }
-        let sustained = Int(speed(wind.sustainedMph).rounded())
-        guard let gust = wind.gustMph.map({ Int(speed($0).rounded()) }), gust > sustained else { return "\(sustained)" }
+        let sustained = roundedSpeed(wind.sustainedMph, units)
+        guard let gust = wind.gustMph.map({ roundedSpeed($0, units) }), gust > sustained else { return "\(sustained)" }
         return "\(sustained) G\(gust)"
+    }
+
+    /// A speed from mph, rounded, in km/h for metric: `45`, `72`
+    public static func speed(_ mph: Double, _ units: UnitSystem = .imperial) -> String {
+        "\(roundedSpeed(mph, units))"
+    }
+
+    private static func roundedSpeed(_ mph: Double, _ units: UnitSystem) -> Int {
+        Int((units == .metric ? Convert.kmh(fromMPH: mph) : mph).rounded())
     }
 
     /// `mph` or `km/h`

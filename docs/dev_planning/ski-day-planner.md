@@ -75,7 +75,7 @@ How likely the forecast is to hold, as a percentage. It drops as the day gets fu
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Settings and data: home address, per-location arrival to lift and overnight parking, typical lift hours in `locations.json`, hourly forecast series out to +3 days | Not started |
+| 1 | Settings and data: home address, per-location arrival to lift and overnight parking, typical lift hours in `locations.json`, hourly forecast series out to +3 days | Done 2026-10-25 |
 | 2 | Scoring: vetoes and weighted hourly groomed and ungroomed scores, best windows, fresh-snow decay, with fixture tests in `NotchlineCore` | Not started |
 | 3 | Departure: MapKit ETA, road and crowd buffers, departure time for each score and day, overnight option | Not started |
 | 4 | Confidence: rule-based in the app, then measured from history by a backtest script | Not started |
@@ -87,6 +87,18 @@ How likely the forecast is to hold, as a percentage. It drops as the day gets fu
 - `Preferences`: home (address text plus geocoded coordinate), per-location arrival-to-lift minutes (default 20), per-location overnight parking allowed (default off), planner on/off, gust threshold, evening-before notification time (default 7 PM), departure reminder lead (default 30 minutes), notification score threshold (default 80).
 - `locations.json`: typical lift hours per location (weekday and weekend, first and last chair). Season dates and daily operations are out of scope; the planner says hours are typical.
 - Providers return an hourly series model alongside `SnowForecast`, with the fields listed under "Hourly scores". Both NWS and Open-Meteo fill it, so the NWS-to-Open-Meteo fallback still works.
+
+As built:
+
+- `PlannerSettings` in `Preferences.swift` holds every planner setting, stored as one JSON value under the `planner` defaults key so settings added later decode with their defaults. Per-location settings are keyed by location ID. The gust threshold is stored in mph. Planner is on by default.
+- Home is geocoded with `CLGeocoder` when the user presses Return in Settings. The entered text, the geocoder's matched name and the coordinate are stored. A failed lookup leaves the previous home in place.
+- The Settings window has a Ski day planner section. Arrival to lift and overnight parking apply to the selected location.
+- `liftHours` in `locations.json` (`ClockTime` values, "HH:mm"), with `Location.liftInterval(on:)` choosing weekday or weekend hours in the location's calendar. Weekend means Saturday and Sunday; holidays use weekday hours. Values are from 2025-26 published hours: Revelstoke's 8:30 to 4:00 is unconfirmed, Sun Peaks uses its main lifts' 9:00 to 4:00, and night skiing at Stevens and Snoqualmie is left out.
+- `SnowForecast.hourly` (`HourlyForecast` of `ForecastHour`) covers `LocalTime.plannerHours`: local midnight today through the end of +3, 23 or 25 hours on daylight saving days. Hours with no values are left out, and a series that ends before the last day's daytime records a warning.
+- NWS amounts are prorated from overlapping intervals; other values come from the interval containing the hour's start. Open-Meteo amounts, gusts and precipitation chance cover the preceding hour, so the hour starting at t reads them from t + 1h.
+- Open-Meteo now sends `timezone` so `forecast_days=4` ends at local midnight after +3 rather than UTC midnight. It also returns `precipitation` (total liquid), to match NWS `quantitativePrecipitation`.
+- Snow level (NWS) and freezing level (Open-Meteo) are separate fields, since they differ by several hundred feet. Phase 2 needs a rule for the Open-Meteo case.
+- `notchline-fetch` prints the hourly range and today's typical lift hours.
 
 ### Phase 2 - scoring
 

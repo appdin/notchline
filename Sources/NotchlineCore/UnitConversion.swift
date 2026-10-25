@@ -9,6 +9,7 @@ enum Convert {
     static func cm(fromInches inches: Double) -> Double { inches * 2.54 }
     static func feet(fromM m: Double) -> Double { m / 0.3048 }
     static func meters(fromFeet feet: Double) -> Double { feet * 0.3048 }
+    static func miles(fromM m: Double) -> Double { m / 1609.344 }
     static func fahrenheit(fromC celsius: Double) -> Double { celsius * 9 / 5 + 32 }
     static func celsius(fromF fahrenheit: Double) -> Double { (fahrenheit - 32) * 5 / 9 }
     static func mph(fromKMH kmh: Double) -> Double { kmh / 1.609344 }

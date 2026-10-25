@@ -41,3 +41,10 @@ func date(_ iso: String) -> Date {
 func catalogLocation(_ id: String) throws -> Location {
     try #require(try LocationCatalog.bundled().location(id: id))
 }
+
+/// The Washington locations' calendar, for parsers that need a local day.
+let pacific: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    return calendar
+}()

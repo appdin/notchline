@@ -139,7 +139,7 @@ struct ProviderWarningsTests {
         let result = await ConditionsService(factory: ProviderFactory(http: StubHTTPClient(routes)))
             .refresh(try catalogLocation("mt-baker"), now: date("2026-10-24T22:30:00Z"))
         #expect(result.errors.isEmpty)
-        #expect(result.warnings[.forecast]?.first?.hasPrefix("Primary forecast failed (HTTP 503") == true)
+        #expect(result.warnings[.forecast]?.contains { $0.hasPrefix("Primary forecast failed (HTTP 503") } == true)
         #expect(result.warnings[.avalanche]?.first?.hasPrefix("Elevation bands unavailable: HTTP 500") == true)
         #expect(result.warnings[.observed] == nil)
     }

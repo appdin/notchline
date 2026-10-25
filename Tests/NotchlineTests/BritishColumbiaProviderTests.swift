@@ -161,7 +161,8 @@ struct OpenMeteoProviderTests {
         #expect(forecast?.tempNowF == nil)
         #expect(forecast?.high == nil)
         #expect(forecast?.windNow != nil)
-        #expect(warnings == ["Open-Meteo temperature_2m is in °F, expected °C; left out"])
+        // The fixture predates forecast_days=4, so its hourly series also falls short.
+        #expect(warnings.filter { !$0.hasSuffix("short of the last planner day") } == ["Open-Meteo temperature_2m is in °F, expected °C; left out"])
     }
 
     @Test func snowfallInAnUnexpectedUnitFails() throws {

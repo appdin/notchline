@@ -110,7 +110,7 @@ Locations are data, not code. Each one is an entry in [`Sources/NotchlineCore/Re
 1. **Find the avalanche forecast.** Determine which avalanche center forecasts for the resort's area and whether it publishes forecasts through an API. US centers on avalanche.org work with the existing provider (set `avalancheCenter` to the center's ID); the zone is found from the resort's coordinates at runtime. Avalanche Canada covers Canada the same way. Elsewhere, add an `AvalancheProvider` for that center's API.
 2. **Find a weather forecast.** NWS covers US locations and Open-Meteo covers everywhere else, so this is usually already handled. Pick a `forecastElevationFt` that represents the ski area rather than the valley below it.
 3. **Find observed snow depth.** Look for an automated station near the base area that reports snow depth hourly, at a similar elevation and in the same snow climate. SNOTEL covers the western US and BC ENV stations cover BC. Other networks need a new `ObservedSnowProvider` and a new `ObservedSnowSource` case. Check the station's data through a recent season before relying on it, since depth sensors can be noisy or go quiet. If there is no good station, use `"modeledOnly"`, and the app labels the modeled depth.
-4. **Add the entry** to `locations.json`, with links to the resort and the station page.
+4. **Add the entry** to `locations.json`, with the resort's typical weekday and weekend lift hours (`liftHours`, first and last chair as local `HH:mm`) and links to the resort and the station page.
 5. **Check it live** with the fetch tool, which prints every metric for one location along with any warnings from the providers:
 
    ```bash
