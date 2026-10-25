@@ -1,7 +1,7 @@
 import NotchlineCore
 import SwiftUI
 
-/// The menu bar dropdown: conditions summary, location picker and actions.
+/// The menu bar dropdown: conditions summary, ski day planner, location picker and actions.
 struct MenuContentView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var model: ConditionsModel
@@ -9,7 +9,10 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                ConditionsSummaryView(model: model, now: context.date)
+                VStack(alignment: .leading, spacing: 12) {
+                    ConditionsSummaryView(model: model, now: context.date)
+                    PlannerSectionView(planner: appState.plannerModel, model: model, actions: appState.plannerActions, now: context.date)
+                }
             }
             Divider()
             locationPicker

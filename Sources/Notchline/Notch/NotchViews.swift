@@ -41,14 +41,19 @@ struct NotchCompactTrailingView: View {
     }
 }
 
-/// Shown below the notch on hover: the same summary as the menu, plus sources and the forecast link.
+/// Shown below the notch on hover: the same summary and planner as the menu, plus sources and the forecast link.
 struct NotchExpandedView: View {
     @ObservedObject var model: ConditionsModel
+    let planner: PlannerModel
+    let actions: PlannerActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                ConditionsSummaryView(model: model, now: context.date)
+                VStack(alignment: .leading, spacing: 12) {
+                    ConditionsSummaryView(model: model, now: context.date)
+                    PlannerSectionView(planner: planner, model: model, actions: actions, now: context.date)
+                }
             }
             footer
         }

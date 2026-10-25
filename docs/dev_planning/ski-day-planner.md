@@ -79,7 +79,7 @@ How likely the forecast is to hold, as a percentage. It drops as the day gets fu
 | 2 | Scoring: vetoes and weighted hourly groomed and ungroomed scores, best windows, fresh-snow decay, with fixture tests in `NotchlineCore` | Done 2026-10-25 |
 | 3 | Departure: MapKit ETA, road and crowd buffers, departure time for each score and day, overnight option | Done 2026-10-25 |
 | 4 | Confidence: rule-based in the app, then measured from history by a backtest script | Done 2026-10-25 |
-| 5 | UI, notifications and ratings: planner section in the expanded notch, day picker, evening-before and leave-soon notifications, day ratings | Not started |
+| 5 | UI, notifications and ratings: planner section in the expanded notch, day picker, evening-before and leave-soon notifications, day ratings | Done 2026-10-25 |
 | 6 | Learning: travel-time logging, then weights learned from ratings once there are enough | Not started |
 
 ### Phase 1 - settings and data
@@ -190,6 +190,20 @@ Backtest results, 5 locations with stations, about 1,200 days per lead (all loca
 - Expanded notch: a planner section with the day picker (Today / Tomorrow / +2 / +3), both scores, the departure, and confidence.
 - Notifications (`UNUserNotificationCenter`), at the times set in Settings: an evening-before summary when the next day crosses the score threshold, and a reminder ahead of the recommended departure.
 - Rating: after a day the planner scored, the app asks "Did you ski [location] today?" The user rates groomed, ungroomed, or both from 1 to 5, depending on what they skied, and can optionally give actual departure and lift times. Ratings are stored locally with the forecast and scores as they were that morning, which is the training data for Phase 6.
+
+As built:
+
+- `SkiDayPlanner` (`Sources/NotchlineCore/Planner/SkiDayPlanner.swift`) runs the whole pipeline from a snapshot: scores, comparison models and confidence, then departures. The app and `notchline-fetch` both use it. `SkiDayPlan.needsHome` marks a plan with scores but no departures.
+- `PlannerModel` holds the selected location's plan. `AppState` replans after every refresh and half a second after a planner setting changes, and clears the plan on a location change or when the planner is turned off. A slower plan never replaces a newer one.
+- The planner section sits under the conditions in both the expanded notch and the menu bar dropdown, since without a notched display the menu is the only view. The day picker reads Today, Tomorrow, then weekdays. Each day shows both scores with the better one first, confidence (its tooltip says whether it was measured, the model spread, and that lift hours are typical), and a row per terrain with the best window, the departure advice, the drive with its buffers, and the overnight option. When both terrains share a window and departure, one "Both" row shows it. A day with no window says why: the lifts have closed, or rain, wind holds or no visibility. Without a home, a link opens Settings.
+- Notifications (`PlannerNotifications`, delivered by `PlannerNotifier` through `UNUserNotificationCenter`) are for the selected location only. Each plan replaces every pending planner notification, so a day that drops below the threshold loses its summary. Permission is asked the first time there is something to deliver. Banners show even though a menu bar app counts as frontmost.
+  - Evening summary: at the summary time on the Mac's clock the evening before each day whose headline score reaches the threshold, for example "Tomorrow at Mt. Baker Ski Area: 92 ungroomed, 74 groomed" with "Leave at 6:15 AM. Confidence 60%." Days further out get theirs scheduled too and are updated by later plans.
+  - Departure reminder: the reminder lead before the headline terrain's departure on days at or over the threshold, with a sound. Not for late plans that already missed the best window.
+  - Rating question: an hour after last chair on a day whose morning score reached the threshold.
+  - Clicking a summary or reminder expands the notch on that location; clicking the rating question opens the rating window.
+- `PlannerArchive` keeps one JSON record per location and day in `~/Library/Application Support/Notchline/planner/<location>/<yyyy-MM-dd>.json`. It holds the morning plan (the latest made before first chair, or the first of the day when the app first planned later) with that day's forecast hours, the headline scores and confidence from one and two days ahead, and the rating. The earlier scores are what Phase 2's crowd stand-in and Phase 6's travel-time log need; nothing reads them yet.
+- Rating prompt: "Did you ski Baker today?" appears in the planner section once a day with a morning plan has passed last chair, and asks about yesterday until today's last chair. "No" records that the user didn't ski, which stops it asking. "Rate…" opens a window with 1 to 5 (or "Didn't ski") for groomed and ungroomed, optional left-home and on-the-lift times in the location's time zone, and the morning forecast for reference. Save needs at least one rating.
+- Every scored day is asked about, in season or not. The prompt is passive in the notch, and only days over the threshold get a notification. If the daily question proves noisy, limit it to days with a skiable window or to days the user looked at the plan.
 
 ### Phase 6 - learning
 

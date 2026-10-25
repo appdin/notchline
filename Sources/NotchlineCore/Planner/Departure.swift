@@ -83,6 +83,8 @@ public struct PlannedDay: Codable, Equatable, Sendable {
 public struct SkiDayPlan: Codable, Equatable, Sendable {
     public var days: [PlannedDay]
     public var warnings: [String]
+    /// No home is set, so there are scores but no departures.
+    public var needsHome = false
 }
 
 /// Fixed rules for v1. Phase 6 tunes the buffers from logged drive times.
@@ -130,7 +132,7 @@ public struct DeparturePlanner: Sendable {
         var days = scores.days.map { PlannedDay(score: $0, groomed: nil, ungroomed: nil) }
         guard let home = settings.home else {
             warnings.append("Set a home address in Settings to get departure times")
-            return SkiDayPlan(days: days, warnings: warnings)
+            return SkiDayPlan(days: days, warnings: warnings, needsHome: true)
         }
         var samples = [hourly]
         if let roadWeather {
@@ -278,7 +280,57 @@ public enum PlannerFormat {
         return "or drive up \(when), leave at \(time(drive.leaveAt, timeZone: timeZone, locale: locale))"
     }
 
-    static func time(_ date: Date, timeZone: TimeZone, locale: Locale) -> String {
+    /// "92 ungroomed, 74 groomed", the better score first. Ties lead with ungroomed, as `DayScore.best` does.
+    public static func scores(_ score: DayScore) -> String {
+        let order: [Terrain] = score.best == .groomed ? [.groomed, .ungroomed] : [.ungroomed, .groomed]
+        let parts = order.compactMap { terrain in score.window(terrain).map { "\($0.averageScore) \(terrain.rawValue)" } }
+        return parts.isEmpty ? "no skiable hours" : parts.joined(separator: ", ")
+    }
+
+    /// "82 min drive", plus "+25 min snow" and "+20 min crowds" when there are buffers.
+    public static func drive(_ drive: DriveLeg) -> String {
+        var parts = ["\(Int((drive.driveTime / 60).rounded())) min drive"]
+        if drive.roadBuffer > 0 { parts.append("+\(Int(drive.roadBuffer / 60)) min \(roadCondition(drive.roadCondition))") }
+        if drive.crowdBuffer > 0 { parts.append("+\(Int(drive.crowdBuffer / 60)) min crowds") }
+        return parts.joined(separator: " ")
+    }
+
+    static func roadCondition(_ condition: RoadCondition) -> String {
+        switch condition {
+        case .clear: "clear roads"
+        case .freezing: "icy roads"
+        case .snow: "snow"
+        case .heavySnow: "heavy snow"
+        case .freezingRain: "freezing rain"
+        }
+    }
+
+    /// "Today", "Tomorrow", then the short weekday, for the day picker.
+    public static func dayName(_ day: Date, now: Date, calendar: Calendar, locale: Locale = .current) -> String {
+        let lead = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: day)).day ?? 0
+        switch lead {
+        case 0: return "Today"
+        case 1: return "Tomorrow"
+        default:
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = calendar.timeZone
+            formatter.setLocalizedDateFormatFromTemplate("EEE")
+            return formatter.string(from: day)
+        }
+    }
+
+    /// "8:30 – 11:00 AM"
+    public static func window(_ interval: DateInterval, timeZone: TimeZone, locale: Locale = .current) -> String {
+        let formatter = DateIntervalFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: interval) ?? time(interval.start, timeZone: timeZone, locale: locale)
+    }
+
+    public static func time(_ date: Date, timeZone: TimeZone, locale: Locale = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.timeZone = timeZone

@@ -22,9 +22,9 @@ final class NotchController {
     private var hoverTask: Task<Void, Never>?
     private var subscriptions: Set<AnyCancellable> = []
 
-    init(model: ConditionsModel) {
+    init(model: ConditionsModel, planner: PlannerModel, actions: PlannerActions) {
         notch = Notch(hoverBehavior: [.keepVisible, .increaseShadow], style: .auto) {
-            NotchExpandedView(model: model)
+            NotchExpandedView(model: model, planner: planner, actions: actions)
         } compactLeading: {
             NotchCompactLeadingView(model: model)
         } compactTrailing: {

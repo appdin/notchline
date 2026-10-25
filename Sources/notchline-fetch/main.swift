@@ -207,27 +207,18 @@ if let forecast = snapshot.forecast {
     } else {
         print("  Hourly     unavailable")
     }
-    if let hourly = forecast.hourly {
-        func score(_ hourly: HourlyForecast) -> PlannerScores {
-            SkiDayScorer.score(
-                hourly, location: location, now: Date(), gustThresholdMph: PlannerSettings.default.gustThresholdMph,
-                priorSnowInches: SkiDayScorer.priorSnowInches(observed: snapshot.observed, hourly: hourly))
+    if forecast.hourly != nil {
+        var settings = PlannerSettings.default
+        if let homeArgument {
+            let parts = homeArgument.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 2 else {
+                FileHandle.standardError.write(Data("--home takes lat,lon, for example 47.6062,-122.3321\n".utf8))
+                exit(1)
+            }
+            settings.home = Home(address: homeArgument, latitude: parts[0], longitude: parts[1])
         }
-        var modelWarnings: [String] = []
-        let models: [HourlyForecast]
-        do {
-            models = Array(try await OpenMeteoProvider(http: RetryingHTTPClient(URLSessionHTTPClient())).modelForecasts(for: location, now: Date()).values)
-        } catch {
-            models = []
-            modelWarnings.append("No comparison models (\(error)); confidence goes by lead alone")
-        }
-        var table: ConfidenceTable?
-        do {
-            table = try ConfidenceTable.bundled()
-        } catch {
-            modelWarnings.append("No confidence table (\(error)); confidence uses the rule")
-        }
-        let scores = ForecastConfidence.apply(to: score(hourly), models: models.map(score), location: location, now: Date(), table: table)
+        let now = Date()
+        let plan = await SkiDayPlanner.live().plan(snapshot, location: location, settings: settings, now: now)!
         let dayFormatter = DateFormatter()
         dayFormatter.timeZone = location.calendar.timeZone
         dayFormatter.dateFormat = "EEE"
@@ -237,7 +228,7 @@ if let forecast = snapshot.forecast {
         func describe(_ window: ScoreWindow?) -> String {
             window.map { "\($0.averageScore) (\(timeFormatter.string(from: $0.interval.start))-\(timeFormatter.string(from: $0.interval.end)))" } ?? "-"
         }
-        for (index, day) in scores.days.enumerated() {
+        for (index, day) in plan.days.map(\.score).enumerated() {
             let label = index == 0 ? "  Scores     " : "             "
             let vetoes = Set(day.hours.compactMap(\.veto)).map(\.rawValue).sorted()
             let held = vetoes.isEmpty ? "" : "  vetoed: \(vetoes.joined(separator: ", "))"
@@ -247,33 +238,15 @@ if let forecast = snapshot.forecast {
             } ?? ""
             print("\(label)\(dayFormatter.string(from: day.day))  groomed \(describe(day.groomed))  ungroomed \(describe(day.ungroomed))  new \(ConditionsFormat.snow(day.newSnowInches, units))\(held)\(confidence)")
         }
-        var plannerWarnings = scores.warnings + modelWarnings
-        if let homeArgument {
-            let parts = homeArgument.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-            guard parts.count == 2 else {
-                FileHandle.standardError.write(Data("--home takes lat,lon, for example 47.6062,-122.3321\n".utf8))
-                exit(1)
-            }
-            var settings = PlannerSettings.default
-            settings.home = Home(address: homeArgument, latitude: parts[0], longitude: parts[1])
-            let now = Date()
-            let planner = DeparturePlanner(
-                travel: CachedTravelTimes(MapKitTravelTimes()),
-                roadWeather: OpenMeteoProvider(http: RetryingHTTPClient(URLSessionHTTPClient())).roadWeather)
-            let plan = await planner.plan(scores, hourly: hourly, location: location, settings: settings, now: now)
-            plannerWarnings = plan.warnings + modelWarnings
-            for (index, day) in plan.days.enumerated() {
-                for terrain in Terrain.allCases {
-                    guard let departure = day.departure(terrain) else { continue }
-                    let label = index == 0 && terrain == .groomed ? "  Depart     " : "             "
-                    let drive = departure.drive
-                    let extra = [drive.roadBuffer > 0 ? "+\(Int(drive.roadBuffer / 60)) min \(drive.roadCondition.rawValue)" : nil,
-                                 drive.crowdBuffer > 0 ? "+\(Int(drive.crowdBuffer / 60)) min crowd" : nil].compactMap { $0 }
-                    let overnight = departure.overnight.map { "; " + PlannerFormat.overnight($0, now: now, timeZone: location.calendar.timeZone) } ?? ""
-                    print("\(label)\(dayFormatter.string(from: day.score.day)) \(terrain.rawValue): \(PlannerFormat.advice(departure.advice(now: now), timeZone: location.calendar.timeZone)) for \(timeFormatter.string(from: departure.liftTime)) on the lift, \(Int(drive.driveTime / 60)) min drive\(extra.isEmpty ? "" : " " + extra.joined(separator: ", "))\(overnight)")
-                }
+        for (index, day) in plan.days.enumerated() {
+            for terrain in Terrain.allCases {
+                guard let departure = day.departure(terrain) else { continue }
+                let label = index == 0 && terrain == .groomed ? "  Depart     " : "             "
+                let overnight = departure.overnight.map { "; " + PlannerFormat.overnight($0, now: now, timeZone: location.calendar.timeZone) } ?? ""
+                print("\(label)\(dayFormatter.string(from: day.score.day)) \(terrain.rawValue): \(PlannerFormat.advice(departure.advice(now: now), timeZone: location.calendar.timeZone)) for \(timeFormatter.string(from: departure.liftTime)) on the lift, \(PlannerFormat.drive(departure.drive))\(overnight)")
             }
         }
+        let plannerWarnings = plan.warnings
         for warning in plannerWarnings { print("  ! planner: \(warning)") }
     }
     if let hours = location.liftInterval(on: Date()) {

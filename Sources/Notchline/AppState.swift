@@ -6,7 +6,8 @@ import os
 import ServiceManagement
 
 /// Owns the conditions model and decides when to refresh it: on a timer, on wake from sleep,
-/// when the network comes back, and on location change. Also owns the notch window.
+/// when the network comes back, and on location change. Plans ski days after each refresh and
+/// schedules the planner's notifications. Also owns the notch window.
 @MainActor
 final class AppState: ObservableObject {
     static let selectedLocationKey = "selectedLocationID"
@@ -21,6 +22,8 @@ final class AppState: ObservableObject {
     static let refreshMinuteOptions = [15, 30, 60]
 
     let model: ConditionsModel
+    let plannerModel: PlannerModel
+    let plannerActions = PlannerActions()
 
     /// Show the compact conditions beside the notch. On by default.
     @Published var isPinned: Bool {
@@ -60,6 +63,7 @@ final class AppState: ObservableObject {
             } catch {
                 logger.error("Could not save the planner settings: \(error, privacy: .public)")
             }
+            if planner != oldValue { replanSoon() }
         }
     }
 
@@ -73,6 +77,9 @@ final class AppState: ObservableObject {
 
     private let notch: NotchController
     private let settingsWindow = SettingsWindowController()
+    private let ratingWindow = RatingWindowController()
+    private let notifier = PlannerNotifier()
+    private var replanTask: Task<Void, Never>?
 
     private var schedule = RefreshSchedule()
     private let defaults: UserDefaults
@@ -98,7 +105,15 @@ final class AppState: ObservableObject {
             Logger(subsystem: "com.appdin.notchline", category: "refresh").error("Snapshot cache unavailable: \(error)")
         }
         model = ConditionsModel(catalog: catalog, selectedID: defaults.string(forKey: Self.selectedLocationKey), store: store)
-        notch = NotchController(model: model)
+        let archive: PlannerArchive?
+        do {
+            archive = try PlannerArchive.applicationSupport()
+        } catch {
+            archive = nil
+            Logger(subsystem: "com.appdin.notchline", category: "planner").error("Planner archive unavailable: \(error)")
+        }
+        plannerModel = PlannerModel(planner: .live(), archive: archive)
+        notch = NotchController(model: model, planner: plannerModel, actions: plannerActions)
         isPinned = defaults.object(forKey: Self.pinToNotchKey) as? Bool ?? true
         let minutes = defaults.integer(forKey: Self.refreshMinutesKey)
         refreshMinutes = Self.refreshMinuteOptions.contains(minutes) ? minutes : 30
@@ -115,6 +130,8 @@ final class AppState: ObservableObject {
         model.unitPreference = units
         notch.setPinned(isPinned)
         updateLaunchAtLoginNote()
+        plannerActions.appState = self
+        notifier.onOpen = { [weak self] kind, locationID, day in self?.openNotification(kind, locationID: locationID, day: day) }
 
         observeWake()
         observeNetwork()
@@ -125,6 +142,7 @@ final class AppState: ObservableObject {
         guard locationID != model.location.id else { return }
         model.select(locationID)
         defaults.set(model.location.id, forKey: Self.selectedLocationKey)
+        plannerModel.clear()
         consecutiveFailures = 0
         refreshNow()
     }
@@ -139,6 +157,47 @@ final class AppState: ObservableObject {
 
     func showAbout() {
         AboutPanel.show()
+    }
+
+    /// Opens the rating window for a day the planner scored.
+    func showRating(_ record: PlannerDayRecord) {
+        guard let location = model.catalog.location(id: record.locationID) else { return }
+        ratingWindow.show(record: record, location: location) { [weak self] rating in
+            self?.saveRating(rating, for: record, location: location)
+        }
+    }
+
+    /// "No" to "Did you ski today?", which stops the planner asking about that day.
+    func dismissRating(_ record: PlannerDayRecord) {
+        guard let location = model.catalog.location(id: record.locationID) else { return }
+        saveRating(.didNotSki(at: Date()), for: record, location: location)
+    }
+
+    private func saveRating(_ rating: DayRating, for record: PlannerDayRecord, location: Location) {
+        do {
+            try plannerModel.rate(record, rating, location: location)
+            logger.info("\(record.locationID, privacy: .public) rated: skied \(rating.skied), groomed \(rating.groomed ?? 0), ungroomed \(rating.ungroomed ?? 0)")
+        } catch {
+            logger.error("Could not save the rating: \(error, privacy: .public)")
+        }
+        // The rating question for that day is no longer needed.
+        replanSoon()
+    }
+
+    private func openNotification(_ kind: PlannerNotification.Kind, locationID: String, day: Date) {
+        switch kind {
+        case .rating:
+            guard let location = model.catalog.location(id: locationID) else { return }
+            do {
+                guard let record = try plannerModel.record(location: location, day: day), record.rating == nil else { return }
+                showRating(record)
+            } catch {
+                logger.error("Could not read the day to rate: \(error, privacy: .public)")
+            }
+        case .summary, .departure:
+            if locationID != model.location.id { select(locationID) }
+            notch.showAlert()
+        }
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -198,6 +257,45 @@ final class AppState: ObservableObject {
         consecutiveFailures = result.failedMetrics.isEmpty ? 0 : consecutiveFailures + 1
         alertOnNewSnow(result.snapshot)
         scheduleNext()
+        await replan()
+    }
+
+    /// Replans shortly after a settings change, so stepping through values plans once.
+    private func replanSoon() {
+        replanTask?.cancel()
+        replanTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            await self?.replan()
+        }
+    }
+
+    /// Plans the selected location from its snapshot and replaces the pending notifications.
+    private func replan() async {
+        let location = model.location
+        guard planner.isEnabled else {
+            plannerModel.clear()
+            await notifier.removeAll()
+            return
+        }
+        guard let snapshot = model.snapshot, snapshot.locationID == location.id else { return }
+        guard let plan = await plannerModel.update(snapshot: snapshot, location: location, settings: planner) else {
+            if snapshot.forecast?.hourly == nil {
+                logger.notice("\(location.id, privacy: .public) planner: no hourly forecast to plan from")
+            }
+            return
+        }
+        for warning in plan.warnings {
+            logger.info("\(location.id, privacy: .public) planner warning: \(warning, privacy: .public)")
+        }
+        let now = Date()
+        var today: PlannerDayRecord?
+        do {
+            today = try plannerModel.todayRecord(location: location, now: now)
+        } catch {
+            logger.error("Could not read today's plan record: \(error, privacy: .public)")
+        }
+        await notifier.replace(with: PlannerNotifications.schedule(plan, today: today, location: location, settings: planner, now: now))
     }
 
     /// Expands the notch for a few seconds when new snow passes the alert threshold.
@@ -244,6 +342,25 @@ final class AppState: ObservableObject {
             refreshNow()
         }
         networkWasDown = !satisfied
+    }
+}
+
+/// What the notch's planner section can ask of the app. The notch is built before AppState
+/// finishes initializing, so it reaches AppState through this.
+@MainActor
+final class PlannerActions {
+    weak var appState: AppState?
+
+    func rate(_ record: PlannerDayRecord) {
+        appState?.showRating(record)
+    }
+
+    func didNotSki(_ record: PlannerDayRecord) {
+        appState?.dismissRating(record)
+    }
+
+    func showSettings() {
+        appState?.showSettings()
     }
 }
 
