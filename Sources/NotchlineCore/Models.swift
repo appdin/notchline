@@ -189,19 +189,18 @@ public enum PrecipitationType: String, Codable, Hashable, Sendable {
 }
 
 extension HourlyForecast {
-    /// Builds the series over `LocalTime.plannerHours`, keeping hours with any value. Records a
-    /// warning when the source stops short of the last planner day.
-    static func build(now: Date, calendar: Calendar, source: String, hour: (Date) -> ForecastHour) -> HourlyForecast? {
-        let starts = LocalTime.plannerHours(from: now, calendar: calendar)
+    /// Builds the series over `starts` (usually `LocalTime.plannerHours`), keeping hours with any
+    /// value. Records a warning when the source stops short of the last day's daytime.
+    static func build(starts: [Date], calendar: Calendar, source: String, hour: (Date) -> ForecastHour) -> HourlyForecast? {
         let hours = starts.map(hour).filter { !$0.isEmpty }
         guard let last = hours.last else {
             ProviderWarnings.record("\(source) has no hourly forecast")
             return nil
         }
-        // Short when the series stops before the last planner day's daytime ends.
+        // Short when the series stops before the last day's daytime ends.
         let lastDaytimeHour = LocalTime.time(LocalTime.dayEndHour - 1, on: calendar.startOfDay(for: starts.last!), calendar)
         if last.start < lastDaytimeHour {
-            ProviderWarnings.record("\(source) hourly forecast ends \(ISO8601DateFormatter().string(from: last.start)), short of the last planner day")
+            ProviderWarnings.record("\(source) hourly forecast ends \(ISO8601DateFormatter().string(from: last.start)), short of the last day")
         }
         return HourlyForecast(hours: hours)
     }

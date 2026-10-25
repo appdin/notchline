@@ -7,6 +7,8 @@ import Foundation
 /// between them for a few minutes so a refresh does not ask twice.
 public struct OpenMeteoProvider: Sendable {
     static let baseURL = URL(string: "https://api.open-meteo.com/v1/forecast")!
+    /// Archived forecasts, from 2022 on, with the same fields. Used to sanity check the planner's scores.
+    static let historicalBaseURL = URL(string: "https://historical-forecast-api.open-meteo.com/v1/forecast")!
     public static let sourceName = "Open-Meteo"
 
     private let http: HTTPClient
@@ -26,9 +28,38 @@ public struct OpenMeteoProvider: Sendable {
         return try Self.parse(try await responses.value(for: url.absoluteString, now: now) { try await http.get(url) })
     }
 
+    /// The hourly series as archived forecasts gave it, for every local day from `firstDay` through `lastDay`.
+    public func historicalHourly(for location: Location, from firstDay: Date, through lastDay: Date) async throws -> HourlyForecast {
+        let calendar = location.calendar
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        var components = URLComponents(url: Self.historicalBaseURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = Self.queryItems(for: location) + [
+            URLQueryItem(name: "start_date", value: formatter.string(from: firstDay)),
+            URLQueryItem(name: "end_date", value: formatter.string(from: lastDay)),
+        ]
+        let response = try Self.parse(try await http.get(components.url!))
+        let start = calendar.startOfDay(for: firstDay)
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: lastDay))!
+        guard let hourly = Self.hourlyForecast(from: response, location: location, starts: Array(stride(from: start, to: end, by: 3600))) else {
+            throw ProviderError.noData("Open-Meteo historical forecast")
+        }
+        return hourly
+    }
+
     static func requestURL(for location: Location) -> URL {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
+        components.queryItems = queryItems(for: location) + [
+            URLQueryItem(name: "past_days", value: "1"),
+            URLQueryItem(name: "forecast_days", value: String(LocalTime.plannerDayCount)),
+        ]
+        return components.url!
+    }
+
+    static func queryItems(for location: Location) -> [URLQueryItem] {
+        [
             URLQueryItem(name: "latitude", value: String(format: "%.4f", location.latitude)),
             URLQueryItem(name: "longitude", value: String(format: "%.4f", location.longitude)),
             URLQueryItem(name: "elevation", value: String(Int(Convert.meters(fromFeet: Double(location.forecastElevationFt)).rounded()))),
@@ -37,10 +68,7 @@ public struct OpenMeteoProvider: Sendable {
             // Days start at local midnight rather than UTC, so the last forecast day covers the
             // last planner day. Times stay Unix timestamps.
             URLQueryItem(name: "timezone", value: location.timeZone),
-            URLQueryItem(name: "past_days", value: "1"),
-            URLQueryItem(name: "forecast_days", value: String(LocalTime.plannerDayCount)),
         ]
-        return components.url!
     }
 
     static let hourlyFields = [
@@ -166,20 +194,29 @@ public struct OpenMeteoProvider: Sendable {
                      gustMph: peakGust.map(Convert.mph(fromKMH:)),
                      directionDegrees: windDirection[index])
             },
-            hourly: hourlyForecast(from: response, snowfall: snowfall, temperature: temperature, windSpeed: windSpeed,
-                                   windGusts: windGusts, windDirection: windDirection, location: location, now: now)
+            hourly: hourlyForecast(from: response, location: location, starts: LocalTime.plannerHours(from: now, calendar: location.calendar))
         )
     }
 
     /// The planner's hourly series. Amounts, gusts and the precipitation chance cover the hour
     /// before their timestamp, so the hour starting at `t` reads them from `t + 1h`; temperature
     /// and the other instantaneous values come from `t`.
-    static func hourlyForecast(from response: Response, snowfall: [Double?], temperature: [Double?], windSpeed: [Double?],
-                               windGusts: [Double?], windDirection: [Double?], location: Location, now: Date) -> HourlyForecast? {
+    ///
+    /// Open-Meteo splits rain from snow at the model grid's elevation, not the requested one, and
+    /// reports rain at Mt. Baker on storm days well below freezing. Temperature is adjusted to the
+    /// requested elevation, so rain is kept only in the share of the hour warm enough for it.
+    /// Snowfall amounts are kept as given: against two seasons of SNOTEL depth they track storms
+    /// best, though they run about half of what stations gain.
+    static func hourlyForecast(from response: Response, location: Location, starts: [Date]) -> HourlyForecast? {
         let hourly = response.hourly
         func optional(_ name: String, _ values: [Double?]?) -> [Double?]? {
             values.flatMap { response.checked(name, $0) }
         }
+        let snowfall = optional("snowfall", hourly.snowfall)
+        let temperature = optional("temperature_2m", hourly.temperature_2m)
+        let windSpeed = optional("wind_speed_10m", hourly.wind_speed_10m)
+        let windGusts = optional("wind_gusts_10m", hourly.wind_gusts_10m)
+        let windDirection = optional("wind_direction_10m", hourly.wind_direction_10m)
         let precipitation = optional("precipitation", hourly.precipitation)
         let rain = optional("rain", hourly.rain)
         let showers = optional("showers", hourly.showers)
@@ -188,15 +225,19 @@ public struct OpenMeteoProvider: Sendable {
         let cloudCover = optional("cloud_cover", hourly.cloud_cover)
         let probability = optional("precipitation_probability", hourly.precipitation_probability)
         let indexByTime = Dictionary(hourly.time.indices.map { (hourly.time[$0], $0) }, uniquingKeysWith: { first, _ in first })
-        return HourlyForecast.build(now: now, calendar: location.calendar, source: sourceName) { start in
+        return HourlyForecast.build(starts: starts, calendar: location.calendar, source: sourceName) { start in
             let instant = indexByTime[start.timeIntervalSince1970]
             let following = indexByTime[start.timeIntervalSince1970 + 3600]
             func at(_ index: Int?, _ series: [Double?]?) -> Double? { index.flatMap { series?[$0] } }
             let snowCM = at(following, snowfall)
             // Rain is rain plus showers; either alone is enough to know there is none.
-            let rainMM: Double? = switch (at(following, rain), at(following, showers)) {
+            let modelRainMM: Double? = switch (at(following, rain), at(following, showers)) {
             case (nil, nil): nil
             case let (rain, showers): (rain ?? 0) + (showers ?? 0)
+            }
+            let hourTempsC = [at(instant, temperature), at(following, temperature)].compactMap { $0 }
+            let rainMM = modelRainMM.map { modelRain in
+                hourTempsC.isEmpty ? modelRain : modelRain * rainShare(atC: hourTempsC.reduce(0, +) / Double(hourTempsC.count))
             }
             var types: Set<PrecipitationType> = []
             if let snowCM, snowCM > 0 { types.insert(.snow) }
@@ -218,6 +259,12 @@ public struct OpenMeteoProvider: Sendable {
                 },
                 precipitationTypes: types)
         }
+    }
+
+    /// Share of precipitation falling as rain at an hour's mean temperature: none at or below
+    /// 0.5 °C, all of it from 2.5 °C, mixed between.
+    static func rainShare(atC celsius: Double) -> Double {
+        Piecewise.linear(celsius, [(0.5, 0), (2.5, 1)])
     }
 
     /// Modeled depth at the latest hour not after `now`, with the 24h change from the same hour yesterday.

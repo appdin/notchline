@@ -85,7 +85,7 @@ public struct NWSForecastProvider: SnowForecastProvider {
                     gustMph: peak(in: windGust, window: window)?.value,
                     directionDegrees: value(in: windDirection, at: max(now, sustained.interval.start)))
             },
-            hourly: HourlyForecast.build(now: now, calendar: calendar, source: "NWS") { hourlySeries.hour(starting: $0) }
+            hourly: HourlyForecast.build(starts: LocalTime.plannerHours(from: now, calendar: calendar), calendar: calendar, source: "NWS") { hourlySeries.hour(starting: $0) }
         )
     }
 

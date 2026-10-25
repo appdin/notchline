@@ -16,6 +16,19 @@ enum Convert {
     static func kmh(fromMPH mph: Double) -> Double { mph * 1.609344 }
 }
 
+/// Piecewise linear lookup through `points` (sorted by x), flat beyond the ends. For rules of
+/// thumb given as a few breakpoints, such as snow quality by temperature.
+enum Piecewise {
+    static func linear(_ x: Double, _ points: [(x: Double, y: Double)]) -> Double {
+        guard let first = points.first, let last = points.last else { return 0 }
+        if x <= first.x { return first.y }
+        if x >= last.x { return last.y }
+        let upper = points.firstIndex { $0.x >= x }!
+        let (a, b) = (points[upper - 1], points[upper])
+        return a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x)
+    }
+}
+
 /// Checks the unit a source declares for a value. Whenever a source labels its units, the
 /// provider checks the label before converting, so a changed unit leaves the value out with a
 /// warning instead of showing a wrong number. Sources that do not label units (the BC station

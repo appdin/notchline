@@ -79,6 +79,7 @@ From either source:
   - NWS gives the **snow level**, where rain turns to snow. Open-Meteo gives the **freezing level** instead, which is usually several hundred feet higher.
   - NWS names the precipitation types it expects (snow, rain, freezing rain, sleet) at any coverage, from "slight chance" up. Open-Meteo gives rain and snowfall amounts, and the types come from whichever is above zero.
   - NWS visibility covers only about the next 16 hours. Later hours have none.
+  - Open-Meteo splits rain from snow at its model grid's elevation, which is lower than the ski area. It can report rain at Mt. Baker well below freezing. Temperature is adjusted to the requested elevation, so Notchline keeps Open-Meteo's rain only in the share of each hour warm enough for it: none at or below 0.5°C, all of it from 2.5°C. Its snowfall amounts run about half of what SNOTEL depth gains on storm days.
 
 ## Lift hours
 

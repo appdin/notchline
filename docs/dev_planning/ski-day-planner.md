@@ -76,7 +76,7 @@ How likely the forecast is to hold, as a percentage. It drops as the day gets fu
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Settings and data: home address, per-location arrival to lift and overnight parking, typical lift hours in `locations.json`, hourly forecast series out to +3 days | Done 2026-10-25 |
-| 2 | Scoring: vetoes and weighted hourly groomed and ungroomed scores, best windows, fresh-snow decay, with fixture tests in `NotchlineCore` | Not started |
+| 2 | Scoring: vetoes and weighted hourly groomed and ungroomed scores, best windows, fresh-snow decay, with fixture tests in `NotchlineCore` | Done 2026-10-25 |
 | 3 | Departure: MapKit ETA, road and crowd buffers, departure time for each score and day, overnight option | Not started |
 | 4 | Confidence: rule-based in the app, then measured from history by a backtest script | Not started |
 | 5 | UI, notifications and ratings: planner section in the expanded notch, day picker, evening-before and leave-soon notifications, day ratings | Not started |
@@ -105,6 +105,26 @@ As built:
 Pure functions in `NotchlineCore`, no I/O, same rules as the existing providers (shared unit and local-time helpers, warnings instead of silent drops). Fixture-driven tests cover a powder day, a rain day, a wind-hold day, and a refrozen-crust day.
 
 Before tuning weights, run the score over the last two Mt. Baker seasons using the Historical Forecast API and check the top-scoring days against known storm days, as a sanity check.
+
+As built (`Sources/NotchlineCore/Planner/`):
+
+- `SkiDayScorer.score` takes an `HourlyForecast`, the location, `now`, the gust threshold and new snow from before the series, and scores every lift hour of every day from today to the end of the series. Earlier hours still count toward new snow and crust, so the same call scores a whole season from archived forecasts.
+- Only lift hours are scored, which covers the lifts-closed veto. A partly open hour, such as 3:00 to 3:30 at Baker, counts for the part the lifts run.
+- Vetoes: rain, gusts over the threshold, visibility under 0.1 mile. Rain needs a 50% chance or a measurable amount (0.01"). It's decided by Open-Meteo's rain amount, then a rain-only NWS type, then the snow level, then the freezing level less 1,000 ft. Mixed rain and snow with no level to decide by counts as rain.
+- Factors, each 0 to 1: fresh snow (`1 - e^(-in/4)`), snow quality by temperature (best from 10 to 25°F), surface (refrozen crust), wind (the worse of sustained and gusts nearing the threshold), and light (the worst of cloud, fog and falling snow). Weights are in `ScoreWeights`, which Phase 6 replaces with learned ones. Groomed scores top out at 85, so that the best corduroy day ranks below a deep powder day. A clear, calm day with no new snow scores about 77 groomed and 35 ungroomed.
+- New snow counts from the last chair of the last day with an unvetoed lift hour, so snow during a wind hold carries over. Rain wipes it out. Each inch decays from first chair, or from when it fell if later, with a 3 hour half-life. That halves on weekends and holidays (`BusyDays`: US and BC school and federal holidays, Christmas week, no spring breaks) and drops by a third on days with 6" or more new.
+- "Forecast looked good one or two days earlier" uses the day's own forecast as a stand-in, since earlier forecasts aren't stored yet. Phase 5 stores scores and could supply the real ones.
+- Rain then a freeze at 30°F or below makes a crust until 2" of new snow covers it. It lowers both scores, groomed more.
+- Best window: the contiguous stretch where each hour adds its score less (peak - 15), the maximum subarray. Hours well below the peak end it. Ties keep the earlier window. Today's window only looks at hours that haven't ended. The headline terrain is the one whose window averages higher, ties to ungroomed.
+- Gaps become warnings: missing lift hours are left out, and missing temperature, wind, snowfall, cloud or precipitation is scored as neutral.
+- `notchline-fetch` prints each day's windows, and `--score-history` scores a date range from the Historical Forecast API.
+
+Sanity check, Mt. Baker 2024-25 and 2025-26, 218 days with 30" or more at Wells Creek, against SNOTEL daily depth gains:
+
+- The first run found that Open-Meteo splits rain from snow at its grid's elevation rather than the one we request. On the biggest storm days it reported rain at -4°C, so those days scored as rain days. The provider now keeps rain only in the share of the hour warmer than 0.5°C at the forecast elevation (all rain from 2.5°C). After that fix, the correlation between model new snow and the observed gain rose from 0.12 to 0.54, and 6 of the 10 biggest observed storms rank in the top 22 days.
+- Open-Meteo's snowfall comes in at about half the observed gain on storm days (4.6" vs 8.8" on 12 days of 6" or more). Re-deriving snow from total precipitation and temperature got the amount right but tracked storms less well, so amounts are kept as given. As a result, Open-Meteo scores rarely pass 80: 3 days in two seasons. NWS is the live source for Washington, so check its amounts against SNOTEL early this season before raising the 80 notification threshold.
+- The first weights let groomed outscore ungroomed on the best powder day (78 vs 74). After rebalancing, ungroomed leads on 9 of the 10 days with 5" or more of model snow. The exception is a wind-hold day.
+- Gusts at 45 mph held lifts on only one day in two seasons. Open-Meteo's 10 m gusts likely run low for ridge-top lifts. Revisit with NWS gusts and ratings.
 
 ### Phase 3 - departure
 

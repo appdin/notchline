@@ -53,7 +53,7 @@ struct HourlyForecastTests {
             try? NWSForecastProvider.parseGridpoint(data, now: now, calendar: pacific)
         }
         #expect(forecast?.hourly?.hours.count == 24)
-        #expect(warnings == ["NWS hourly forecast ends 2026-10-26T06:00:00Z, short of the last planner day"])
+        #expect(warnings == ["NWS hourly forecast ends 2026-10-26T06:00:00Z, short of the last day"])
     }
 
     @Test func nwsWeatherMapsPrecipitationTypes() throws {
@@ -88,7 +88,8 @@ struct HourlyForecastTests {
         #expect(hour.skyCoverPercent == 100)
         #expect(hour.precipitationProbability == 57)
         #expect(abs(try #require(hour.precipitationInches) - 1.4 / 25.4) < 0.00001)
-        #expect(abs(try #require(hour.rainInches) - 1.3 / 25.4) < 0.00001)
+        // 1.65 °C over the hour, so a little over half the model's rain stays rain.
+        #expect(abs(try #require(hour.rainInches) - 1.3 * OpenMeteoProvider.rainShare(atC: 1.65) / 25.4) < 0.00001)
         #expect(abs(try #require(hour.snowfallInches) - 0.07 / 2.54) < 0.00001)
         #expect(hour.snowLevelFt == nil)
         #expect(abs(try #require(hour.wind?.sustainedMph) - 6.773) < 0.001)

@@ -3,6 +3,9 @@ import NotchlineCore
 
 // Debug command: fetch a live snapshot for one location and print it.
 // Usage: notchline-fetch [location-id] [--json]
+//        notchline-fetch [location-id] --score-history yyyy-MM-dd yyyy-MM-dd
+// --score-history scores every day in the range from Open-Meteo's archived forecasts and prints
+// one tab-separated line per day, for checking the planner against known storm days.
 
 let args = CommandLine.arguments.dropFirst()
 let wantsJSON = args.contains("--json")
@@ -15,10 +18,35 @@ if args.contains("--list") {
     exit(0)
 }
 
-let requestedID = args.first { !$0.hasPrefix("--") } ?? LocationCatalog.defaultLocationID
+let positional = args.filter { !$0.hasPrefix("--") }
+let requestedID = positional.first ?? LocationCatalog.defaultLocationID
 guard let location = catalog.location(id: requestedID) else {
     FileHandle.standardError.write(Data("Unknown location '\(requestedID)'. Use --list to see IDs.\n".utf8))
     exit(1)
+}
+
+if args.contains("--score-history") {
+    let dayFormatter = DateFormatter()
+    dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+    dayFormatter.timeZone = location.calendar.timeZone
+    dayFormatter.dateFormat = "yyyy-MM-dd"
+    guard positional.count == 3, let first = dayFormatter.date(from: positional[1]), let last = dayFormatter.date(from: positional[2]) else {
+        FileHandle.standardError.write(Data("Usage: notchline-fetch <location-id> --score-history yyyy-MM-dd yyyy-MM-dd\n".utf8))
+        exit(1)
+    }
+    let hourly = try await OpenMeteoProvider(http: RetryingHTTPClient(URLSessionHTTPClient(timeout: 60)))
+        .historicalHourly(for: location, from: first, through: last)
+    let scores = SkiDayScorer.score(hourly, location: location, now: first, gustThresholdMph: PlannerSettings.default.gustThresholdMph)
+    print("day\tweekday\tnewSnowIn\tgroomed\tungroomed\trainHours\twindHours\tvisibilityHours\ticyHours")
+    for day in scores.days {
+        let vetoes = { (veto: Veto) in day.hours.filter { $0.veto == veto }.count }
+        let weekday = location.calendar.component(.weekday, from: day.day)
+        print([dayFormatter.string(from: day.day), dayFormatter.shortWeekdaySymbols[weekday - 1], String(format: "%.1f", day.newSnowInches),
+               day.groomed.map { "\($0.averageScore)" } ?? "-", day.ungroomed.map { "\($0.averageScore)" } ?? "-",
+               "\(vetoes(.rain))", "\(vetoes(.wind))", "\(vetoes(.visibility))", "\(day.hours.filter(\.isIcy).count)"].joined(separator: "\t"))
+    }
+    for warning in scores.warnings { FileHandle.standardError.write(Data("! \(warning)\n".utf8)) }
+    exit(0)
 }
 
 let result = await ConditionsService().refresh(location)
@@ -84,6 +112,27 @@ if let forecast = snapshot.forecast {
         print("  Hourly     \(hours.count) hours, \(formatter.string(from: first.start)) to \(formatter.string(from: last.start))")
     } else {
         print("  Hourly     unavailable")
+    }
+    if let hourly = forecast.hourly {
+        let scores = SkiDayScorer.score(
+            hourly, location: location, now: Date(), gustThresholdMph: PlannerSettings.default.gustThresholdMph,
+            priorSnowInches: SkiDayScorer.priorSnowInches(observed: snapshot.observed, hourly: hourly))
+        let dayFormatter = DateFormatter()
+        dayFormatter.timeZone = location.calendar.timeZone
+        dayFormatter.dateFormat = "EEE"
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeZone = location.calendar.timeZone
+        timeFormatter.dateFormat = "HH:mm"
+        func describe(_ window: ScoreWindow?) -> String {
+            window.map { "\($0.averageScore) (\(timeFormatter.string(from: $0.interval.start))-\(timeFormatter.string(from: $0.interval.end)))" } ?? "-"
+        }
+        for (index, day) in scores.days.enumerated() {
+            let label = index == 0 ? "  Scores     " : "             "
+            let vetoes = Set(day.hours.compactMap(\.veto)).map(\.rawValue).sorted()
+            let held = vetoes.isEmpty ? "" : "  vetoed: \(vetoes.joined(separator: ", "))"
+            print("\(label)\(dayFormatter.string(from: day.day))  groomed \(describe(day.groomed))  ungroomed \(describe(day.ungroomed))  new \(ConditionsFormat.snow(day.newSnowInches, units))\(held)")
+        }
+        for warning in scores.warnings { print("  ! planner: \(warning)") }
     }
     if let hours = location.liftInterval(on: Date()) {
         let formatter = DateFormatter()
