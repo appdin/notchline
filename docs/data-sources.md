@@ -81,6 +81,17 @@ From either source:
   - NWS visibility covers only about the next 16 hours. Later hours have none.
   - Open-Meteo splits rain from snow at its model grid's elevation, which is lower than the ski area. It can report rain at Mt. Baker well below freezing. Temperature is adjusted to the requested elevation, so Notchline keeps Open-Meteo's rain only in the share of each hour warm enough for it: none at or below 0.5°C, all of it from 2.5°C. Its snowfall amounts run about half of what SNOTEL depth gains on storm days.
 
+## Forecast confidence: Open-Meteo models and history
+
+The planner's confidence for each day depends on two things: how many days out the day is, and how closely three forecast models agree on its score. Those models are GFS (US), ICON (Germany) and GEM (Canada), all fetched from Open-Meteo in one request. ECMWF is left out because Open-Meteo has no snowfall for it at these points.
+
+The percentages come from a table that ships with the app. It's built by `scripts/backtest-confidence.sh` from two kinds of data:
+
+- Open-Meteo's [Previous Runs API](https://open-meteo.com/en/docs/previous-runs-api), which archives forecasts as they stood 1 to 7 days ahead, from January 2024.
+- The station readings described above. For Washington that's the SNOTEL hourly history. For Whistler it's BC ENV's archive files (`SD_Archive.csv` and `TA_Archive.csv`, over 100 MB together).
+
+Revelstoke and Sun Peaks have no station, so they use the figures for every location together.
+
 ## Lift hours
 
 Each ski area in `locations.json` has typical weekday and weekend first and last chair times, taken from the resort's published hours. They don't track season dates, holidays, night skiing or day-to-day changes, so the planner presents them as typical. Where hours change through the season (Whistler closes at 3:00 PM early in the season and 4:00 PM by spring), the entry uses the early-season hours.

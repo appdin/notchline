@@ -9,6 +9,8 @@ public struct OpenMeteoProvider: Sendable {
     static let baseURL = URL(string: "https://api.open-meteo.com/v1/forecast")!
     /// Archived forecasts, from 2022 on, with the same fields. Used to sanity check the planner's scores.
     static let historicalBaseURL = URL(string: "https://historical-forecast-api.open-meteo.com/v1/forecast")!
+    /// Archived forecasts made 1 to 7 days ahead, from January 2024 on. Used to measure confidence.
+    static let previousRunsBaseURL = URL(string: "https://previous-runs-api.open-meteo.com/v1/forecast")!
     public static let sourceName = "Open-Meteo"
 
     private let http: HTTPClient
@@ -50,6 +52,118 @@ public struct OpenMeteoProvider: Sendable {
         return hourly
     }
 
+    /// Models compared for disagreement. ECMWF is left out: Open-Meteo has no snowfall for it here.
+    public static let comparisonModels = ["gfs_seamless", "icon_seamless", "gem_seamless"]
+
+    /// Fields archived at every lead. Previous Runs has no freezing level or visibility beyond the
+    /// latest run, so the comparison models and the backtest go without them.
+    static let previousRunFields = [
+        "snowfall", "temperature_2m", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
+        "precipitation", "rain", "showers", "cloud_cover", "precipitation_probability",
+    ]
+
+    /// Each comparison model's planner series, for model disagreement. One request covers them all.
+    public func modelForecasts(for location: Location, now: Date) async throws -> [String: HourlyForecast] {
+        var components = URLComponents(url: Self.baseURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = Self.queryItems(at: location.coordinate, elevationFt: location.forecastElevationFt, timeZone: location.timeZone, fields: Self.previousRunFields) + [
+            URLQueryItem(name: "forecast_days", value: String(LocalTime.plannerDayCount)),
+            URLQueryItem(name: "models", value: Self.comparisonModels.joined(separator: ",")),
+        ]
+        let url = components.url!
+        let http = self.http
+        let data = try await responses.value(for: url.absoluteString, now: now) { try await http.get(url) }
+        let starts = LocalTime.plannerHours(from: now, calendar: location.calendar)
+        let byModel = try Self.split(data, suffixes: Dictionary(uniqueKeysWithValues: Self.comparisonModels.map { ($0, "_\($0)") }))
+        return byModel.compactMapValues { Self.hourlyForecast(from: Self.comparable($0), calendar: location.calendar, starts: starts) }
+    }
+
+    /// Archived forecasts as they stood `lead` days before each hour, for every local day from
+    /// `firstDay` through `lastDay`: the best-match series the app would have used, and each
+    /// comparison model's. Lead 0 is the latest run for each hour.
+    public func previousRuns(for location: Location, from firstDay: Date, through lastDay: Date, lead: Int) async throws -> PreviousRuns {
+        let calendar = location.calendar
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let leadSuffix = lead == 0 ? "" : "_previous_day\(lead)"
+        let models = ["best_match"] + Self.comparisonModels
+        var components = URLComponents(url: Self.previousRunsBaseURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = Self.queryItems(at: location.coordinate, elevationFt: location.forecastElevationFt, timeZone: location.timeZone,
+                                                fields: Self.previousRunFields.map { $0 + leadSuffix }) + [
+            URLQueryItem(name: "models", value: models.joined(separator: ",")),
+            URLQueryItem(name: "start_date", value: formatter.string(from: firstDay)),
+            URLQueryItem(name: "end_date", value: formatter.string(from: lastDay)),
+        ]
+        let byModel = try Self.split(try await http.get(components.url!), suffixes: Dictionary(uniqueKeysWithValues: models.map { ($0, leadSuffix + "_\($0)") }))
+        let start = calendar.startOfDay(for: firstDay)
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: lastDay))!
+        let starts = Array(stride(from: start, to: end, by: 3600))
+        guard let best = byModel["best_match"], let forecast = Self.hourlyForecast(from: best, calendar: calendar, starts: starts) else {
+            throw ProviderError.noData("Open-Meteo previous runs, \(lead) days ahead")
+        }
+        return PreviousRuns(
+            forecast: forecast,
+            models: byModel.filter { $0.key != "best_match" }.compactMapValues { Self.hourlyForecast(from: Self.comparable($0), calendar: calendar, starts: starts) })
+    }
+
+    public struct PreviousRuns: Sendable {
+        public var forecast: HourlyForecast
+        public var models: [String: HourlyForecast]
+    }
+
+    /// A model's response reduced to what every comparison model has, so disagreement measures the
+    /// forecasts rather than which fields each model fills. ICON has no rain or precipitation
+    /// chance at longer leads, so rain comes from total precipitation and temperature for all of them.
+    static func comparable(_ response: Response) -> Response {
+        let hourly = response.hourly
+        var units = response.hourly_units ?? [:]
+        units["rain"] = units["precipitation"]
+        return Response(
+            elevation: response.elevation, hourly_units: units,
+            hourly: Response.Hourly(
+                time: hourly.time, snowfall: hourly.snowfall, snow_depth: hourly.snow_depth, temperature_2m: hourly.temperature_2m,
+                wind_speed_10m: hourly.wind_speed_10m, wind_gusts_10m: hourly.wind_gusts_10m, wind_direction_10m: hourly.wind_direction_10m,
+                precipitation: hourly.precipitation, rain: hourly.precipitation, showers: nil, freezing_level_height: nil,
+                visibility: nil, cloud_cover: hourly.cloud_cover, precipitation_probability: nil))
+    }
+
+    /// One response per model or lead from a request for several, whose series names carry a
+    /// suffix such as `_previous_day2_gfs_seamless`. Keyed as `suffixes` is. A series the
+    /// response lacks comes back as all nil.
+    static func split(_ data: Data, suffixes: [String: String]) throws -> [String: Response] {
+        struct Raw: Decodable {
+            let elevation: Double?
+            let hourly_units: [String: String]?
+            let hourly: [String: [Double?]]
+        }
+        let raw = try JSONDecoder().decode(Raw.self, from: data)
+        guard let times = raw.hourly["time"], times.allSatisfy({ $0 != nil }) else {
+            throw ProviderError.unexpectedResponse("Open-Meteo hourly time")
+        }
+        return try suffixes.mapValues { suffix in
+            let none = [Double?](repeating: nil, count: times.count)
+            var units: [String: String] = [:]
+            func series(_ name: String) -> [Double?]? {
+                guard let values = raw.hourly[name + suffix] else {
+                    // Absent rather than in another unit, so there is nothing to warn about.
+                    units[name] = Response.expectedUnits[name]
+                    return nil
+                }
+                units[name] = raw.hourly_units?[name + suffix]
+                return values
+            }
+            let hourly = Response.Hourly(
+                time: times.map { $0! }, snowfall: series("snowfall") ?? none, snow_depth: series("snow_depth") ?? none,
+                temperature_2m: series("temperature_2m") ?? none, wind_speed_10m: series("wind_speed_10m") ?? none,
+                wind_gusts_10m: series("wind_gusts_10m") ?? none, wind_direction_10m: series("wind_direction_10m") ?? none,
+                precipitation: series("precipitation"), rain: series("rain"), showers: series("showers"),
+                freezing_level_height: series("freezing_level_height"), visibility: series("visibility"),
+                cloud_cover: series("cloud_cover"), precipitation_probability: series("precipitation_probability"))
+            return try validated(Response(elevation: raw.elevation, hourly_units: units, hourly: hourly))
+        }
+    }
+
     static func requestURL(for location: Location) -> URL {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         components.queryItems = queryItems(for: location) + [
@@ -64,12 +178,12 @@ public struct OpenMeteoProvider: Sendable {
     }
 
     /// Without an elevation, Open-Meteo uses the terrain's own height at the point.
-    static func queryItems(at coordinate: Coordinate, elevationFt: Int?, timeZone: String) -> [URLQueryItem] {
+    static func queryItems(at coordinate: Coordinate, elevationFt: Int?, timeZone: String, fields: [String] = hourlyFields) -> [URLQueryItem] {
         [
             URLQueryItem(name: "latitude", value: String(format: "%.4f", coordinate.latitude)),
             URLQueryItem(name: "longitude", value: String(format: "%.4f", coordinate.longitude)),
         ] + (elevationFt.map { [URLQueryItem(name: "elevation", value: String(Int(Convert.meters(fromFeet: Double($0)).rounded())))] } ?? []) + [
-            URLQueryItem(name: "hourly", value: hourlyFields.joined(separator: ",")),
+            URLQueryItem(name: "hourly", value: fields.joined(separator: ",")),
             URLQueryItem(name: "timeformat", value: "unixtime"),
             // Days start at local midnight rather than UTC, so the last forecast day covers the
             // last planner day. Times stay Unix timestamps.
@@ -150,7 +264,11 @@ public struct OpenMeteoProvider: Sendable {
     }
 
     static func parse(_ data: Data) throws -> Response {
-        let response = try JSONDecoder().decode(Response.self, from: data)
+        try validated(JSONDecoder().decode(Response.self, from: data))
+    }
+
+    /// Every series the same length as the times.
+    static func validated(_ response: Response) throws -> Response {
         let count = response.hourly.time.count
         let hourly = response.hourly
         let planner = [hourly.precipitation, hourly.rain, hourly.showers, hourly.freezing_level_height,

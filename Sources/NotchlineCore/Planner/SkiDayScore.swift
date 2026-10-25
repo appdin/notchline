@@ -48,6 +48,8 @@ public struct DayScore: Codable, Equatable, Sendable {
     public var isBusy: Bool
     /// The forecast looks good enough to draw a crowd, so fresh snow goes faster.
     public var drawsCrowd: Bool
+    /// How likely each score is to hold. Set by `ForecastConfidence.apply`, nil from the scorer.
+    public var confidence: DayConfidence? = nil
 
     public func window(_ terrain: Terrain) -> ScoreWindow? {
         terrain == .groomed ? groomed : ungroomed

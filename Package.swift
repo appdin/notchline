@@ -18,7 +18,7 @@ let package = Package(
     targets: [
         .target(
             name: "NotchlineCore",
-            resources: [.copy("Resources/locations.json")]
+            resources: [.copy("Resources/locations.json"), .copy("Resources/confidence.json")]
         ),
         .executableTarget(
             name: "Notchline",

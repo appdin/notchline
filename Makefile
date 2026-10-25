@@ -34,7 +34,7 @@ app: build
 	    -e 's/$$(VERSION)/$(VERSION)/' \
 	    -e 's/$$(BUILD_NUMBER)/$(BUILD_NUMBER)/' \
 	    Resources/Info.plist > $(APP)/Contents/Info.plist
-	cp Sources/NotchlineCore/Resources/locations.json $(APP)/Contents/Resources/
+	cp Sources/NotchlineCore/Resources/locations.json Sources/NotchlineCore/Resources/confidence.json $(APP)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP)/Contents/Resources/
 	codesign $(CODESIGN_FLAGS) -s "$(SIGN_IDENTITY)" $(APP)
 	codesign --verify --strict $(APP)

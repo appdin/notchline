@@ -18,6 +18,10 @@ public struct BCSnowStationProvider: ObservedSnowProvider {
     /// Enough rows for 30 hours even when every station reports, at well under 1 KB a row.
     static let tailRange = "bytes=-49152"
 
+    /// Every hour before this season, tens of megabytes each. Same layout as the current files.
+    static let depthArchiveFile = "SD_Archive.csv"
+    static let temperatureArchiveFile = "TA_Archive.csv"
+
     private let http: HTTPClient
     /// Headers change only when stations are added or removed, so they are kept for a day and
     /// refetched early if the rows stop lining up with them.
@@ -58,6 +62,40 @@ public struct BCSnowStationProvider: ObservedSnowProvider {
             throw ProviderError.unexpectedResponse("\(file) rows do not match its header")
         }
         return fresh
+    }
+
+    /// Hourly depth and temperature from `start` through `end` from the archive files, for the
+    /// confidence backtest. Downloads both files whole.
+    public func archiveHistory(station: BCSnowStation, from start: Date, through end: Date) async throws -> StationHistory {
+        let range = DateInterval(start: start, end: end)
+        let depth = try Self.column(try await http.get(Self.baseURL.appendingPathComponent(Self.depthArchiveFile)), station: station.id, in: range)
+        let temps = try Self.column(try await http.get(Self.baseURL.appendingPathComponent(Self.temperatureArchiveFile)), station: station.id, in: range)
+        return StationHistory(
+            stationName: station.name, elevationFt: station.elevationFt,
+            depthInches: depth.filter { $0.value >= 0 }.mapValues(Convert.inches(fromCM:)),
+            tempF: temps.mapValues(Convert.fahrenheit(fromC:)))
+    }
+
+    /// One station's values within `range` from a whole file. Rows outside the range are skipped
+    /// by their date alone, since an archive holds years of rows for every station.
+    static func column(_ data: Data, station id: String, in range: DateInterval) throws -> [Date: Double] {
+        let lines = TextResponse.lines(data)
+        guard let header = lines.first, header.hasPrefix("DATE(UTC)"),
+              let column = TextResponse.fields(header).firstIndex(where: { $0.split(separator: " ").first.map(String.init) == id }) else {
+            throw ProviderError.noData("station \(id) in BC snow station archive")
+        }
+        let formatter = utcFormatter()
+        let first = formatter.string(from: range.start)
+        let last = formatter.string(from: range.end)
+        var values: [Date: Double] = [:]
+        for line in lines.dropFirst() {
+            // "yyyy-MM-dd HH:mm" sorts as text.
+            let stamp = String(line.prefix(16))
+            guard stamp >= first, stamp <= last, let date = formatter.date(from: stamp) else { continue }
+            let fields = TextResponse.fields(line)
+            if column < fields.count, let value = Double(fields[column]) { values[date] = value }
+        }
+        return values
     }
 
     static func observation(station: BCSnowStation, depth: Table, temperature: Table?, now: Date) throws -> ObservedSnow {

@@ -78,7 +78,7 @@ How likely the forecast is to hold, as a percentage. It drops as the day gets fu
 | 1 | Settings and data: home address, per-location arrival to lift and overnight parking, typical lift hours in `locations.json`, hourly forecast series out to +3 days | Done 2026-10-25 |
 | 2 | Scoring: vetoes and weighted hourly groomed and ungroomed scores, best windows, fresh-snow decay, with fixture tests in `NotchlineCore` | Done 2026-10-25 |
 | 3 | Departure: MapKit ETA, road and crowd buffers, departure time for each score and day, overnight option | Done 2026-10-25 |
-| 4 | Confidence: rule-based in the app, then measured from history by a backtest script | Not started |
+| 4 | Confidence: rule-based in the app, then measured from history by a backtest script | Done 2026-10-25 |
 | 5 | UI, notifications and ratings: planner section in the expanded notch, day picker, evening-before and leave-soon notifications, day ratings | Not started |
 | 6 | Learning: travel-time logging, then weights learned from ratings once there are enough | Not started |
 
@@ -156,6 +156,34 @@ Found while building: Apple applies current closures to the route. On 2026-10-25
 ### Phase 4 - confidence
 
 See "Confidence" above. The backtest script runs on demand, not in the app, and its output table is committed.
+
+As built (`Sources/NotchlineCore/Planner/Confidence.swift`, `ConfidenceBacktest.swift`):
+
+- Model disagreement comes from three models on Open-Meteo (GFS, ICON, GEM) rather than the ensemble API, because Previous Runs archives each model at every lead and the ensemble API keeps no comparable history. That makes disagreement measurable in the backtest. ECMWF has no snowfall there. One extra request per refresh (`OpenMeteoProvider.modelForecasts`) fetches all three. Each model gets the same scoring as the main forecast. The spread is the gap between the highest and lowest model's best-window average: under 10 points means the models agree, 10 to 24 that they differ, and 25 or more that they disagree.
+- The models are compared on the fields all three have at every lead. Rain comes from total precipitation and temperature, since ICON has no rain or precipitation chance at longer leads. Freezing level and visibility are left out, since Previous Runs has neither beyond the latest run.
+- `ForecastConfidence.apply` sets `DayScore.confidence` (lead, spread, percent, and whether the figure was measured) for each terrain. The percent comes from the bundled `confidence.json`. A location's own rate is blended with every location's rate, weighted as 20 days of the pooled rate. A level of agreement with fewer than 20 pooled days falls back to the rate for any agreement. Without the table, a rule applies: 90/85/80/80% by lead, less 15 when the models differ and 30 when they disagree. The rule's numbers are rounded from the backtest.
+- The backtest (`scripts/backtest-confidence.sh`, which runs `notchline-fetch --backtest-confidence`) covers 2024-01-08 to 2024-04-15, 2024-12-01 to 2025-04-15 and 2025-12-01 to 2026-04-15. For each day and each lead from 0 to 3, it scores the best-match forecast and the three models from runs made that far ahead. Then it compares the forecast score with a score of what happened. A day "holds" when the two are within 15 points, the same margin as the best window.
+- What happened is built from the latest run, with the station's readings swapped in for snow and temperature. Snow is the depth gained from last chair to first chair and during lift hours, using the median depth within 2 hours of each time. It's spread over that stretch's hours the way the forecast spread its snow. Temperature is moved up to the forecast elevation at 3.5°F per 1,000 ft. Where the station saw no new snow, rain follows the station's temperature. A day counts only when the station covers the last chair before it, its first and last chair, and half its lift hours. The first day of each range is skipped.
+- Responses are cached on disk (`--cache`), so reruns cost no Open-Meteo quota. A first run takes about 12 minutes.
+- `notchline-fetch` prints each day's groomed and ungroomed confidence and the ungroomed model spread.
+
+Backtest results, 5 locations with stations, about 1,200 days per lead (all locations together, share of days held):
+
+| | +0 | +1 | +2 | +3 |
+|---|---|---|---|---|
+| Ungroomed, any agreement | 84% | 81% | 78% | 78% |
+| Ungroomed, models agree | 93% | 92% | 90% | 90% |
+| Ungroomed, models disagree | 64% | 60% | 52% | 49% |
+| Groomed, any agreement | 94% | 91% | 89% | 89% |
+| Groomed, models disagree | 87% | 73% | 60% | 67% |
+
+- Disagreement predicts misses far better than lead time does. Ungroomed confidence falls only 6 points from today to +3, but it falls by about 30 to 40 points when the models disagree. The fallback rule was set from these numbers.
+- Most days are quiet, with no new snow and similar scores, so high overall rates mostly reflect easy days. Confidence on storm days is what matters, and it shows up as disagreement.
+- Lead 0 is flattered: what happened borrows the latest run's wind, cloud and precipitation, so at lead 0 only snow and temperature can miss.
+- The forecast measured is Open-Meteo's best match. Washington runs on NWS live, which has no comparable archive, so its confidence assumes NWS misses about as often as Open-Meteo.
+- Stevens Pass and Snoqualmie have about 135 covered days, against 300 or more elsewhere. The cause isn't checked yet. Gaps in the stations' hourly depth are the likely reason.
+- Callaghan Creek, Whistler's station, is 2,200 ft below the forecast elevation, so its rain and snow line may differ from the hill's.
+- The measured rates don't yet separate storm days from quiet ones, or tell the forecast's direction of error. Ratings in Phase 5 and 6 can show whether a user's misses are mostly storms coming in smaller than forecast.
 
 ### Phase 5 - UI, notifications and ratings
 

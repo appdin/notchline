@@ -1,0 +1,1658 @@
+{
+  "cells" : [
+    {
+      "days" : 1232,
+      "held" : 1152,
+      "lead" : 0,
+      "meanError" : 4.6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 815,
+      "held" : 782,
+      "lead" : 0,
+      "meanError" : 3.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 332,
+      "held" : 296,
+      "lead" : 0,
+      "meanError" : 7,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 85,
+      "held" : 74,
+      "lead" : 0,
+      "meanError" : 7.6,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 1202,
+      "held" : 1098,
+      "lead" : 1,
+      "meanError" : 6.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 595,
+      "held" : 574,
+      "lead" : 1,
+      "meanError" : 4.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 510,
+      "held" : 453,
+      "lead" : 1,
+      "meanError" : 6.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 97,
+      "held" : 71,
+      "lead" : 1,
+      "meanError" : 17.8,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 1199,
+      "held" : 1064,
+      "lead" : 2,
+      "meanError" : 7.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 634,
+      "held" : 582,
+      "lead" : 2,
+      "meanError" : 5.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 480,
+      "held" : 431,
+      "lead" : 2,
+      "meanError" : 6.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 85,
+      "held" : 51,
+      "lead" : 2,
+      "meanError" : 23.7,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 1196,
+      "held" : 1061,
+      "lead" : 3,
+      "meanError" : 7.1,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 595,
+      "held" : 561,
+      "lead" : 3,
+      "meanError" : 5.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 509,
+      "held" : 438,
+      "lead" : 3,
+      "meanError" : 6.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 92,
+      "held" : 62,
+      "lead" : 3,
+      "meanError" : 18.7,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 1232,
+      "held" : 1029,
+      "lead" : 0,
+      "meanError" : 7.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 775,
+      "held" : 720,
+      "lead" : 0,
+      "meanError" : 4.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 320,
+      "held" : 222,
+      "lead" : 0,
+      "meanError" : 11.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 137,
+      "held" : 87,
+      "lead" : 0,
+      "meanError" : 14.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 1202,
+      "held" : 979,
+      "lead" : 1,
+      "meanError" : 8.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 712,
+      "held" : 656,
+      "lead" : 1,
+      "meanError" : 5.3,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 317,
+      "held" : 219,
+      "lead" : 1,
+      "meanError" : 11.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 173,
+      "held" : 104,
+      "lead" : 1,
+      "meanError" : 16.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 1199,
+      "held" : 939,
+      "lead" : 2,
+      "meanError" : 9.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 742,
+      "held" : 668,
+      "lead" : 2,
+      "meanError" : 5.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 269,
+      "held" : 173,
+      "lead" : 2,
+      "meanError" : 14.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 188,
+      "held" : 98,
+      "lead" : 2,
+      "meanError" : 18.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 1196,
+      "held" : 927,
+      "lead" : 3,
+      "meanError" : 9.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 728,
+      "held" : 652,
+      "lead" : 3,
+      "meanError" : 6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 288,
+      "held" : 187,
+      "lead" : 3,
+      "meanError" : 13.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 180,
+      "held" : 88,
+      "lead" : 3,
+      "meanError" : 19.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 323,
+      "held" : 308,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 4.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 225,
+      "held" : 215,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 3.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 83,
+      "held" : 80,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 6.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 15,
+      "held" : 13,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 5.7,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 313,
+      "held" : 298,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 4.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 142,
+      "held" : 137,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 4.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 150,
+      "held" : 141,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 21,
+      "held" : 20,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 7,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 312,
+      "held" : 278,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 7.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 130,
+      "held" : 121,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 5.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 166,
+      "held" : 150,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 6.7,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 16,
+      "held" : 7,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 29.8,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 311,
+      "held" : 277,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 7.1,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 146,
+      "held" : 133,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 6.1,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 148,
+      "held" : 133,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 6.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 17,
+      "held" : 11,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 22.9,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 323,
+      "held" : 255,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 8.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 232,
+      "held" : 203,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 6.2,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 68,
+      "held" : 35,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 13.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 23,
+      "held" : 17,
+      "lead" : 0,
+      "location" : "crystal",
+      "meanError" : 11,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 313,
+      "held" : 258,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 8.3,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 201,
+      "held" : 185,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 5.9,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 80,
+      "held" : 50,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 12.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 32,
+      "held" : 23,
+      "lead" : 1,
+      "location" : "crystal",
+      "meanError" : 12.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 312,
+      "held" : 254,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 9.3,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 203,
+      "held" : 184,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 6.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 64,
+      "held" : 42,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 15,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 45,
+      "held" : 28,
+      "lead" : 2,
+      "location" : "crystal",
+      "meanError" : 14.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 311,
+      "held" : 241,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 10,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 204,
+      "held" : 182,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 6.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 68,
+      "held" : 41,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 15.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 39,
+      "held" : 18,
+      "lead" : 3,
+      "location" : "crystal",
+      "meanError" : 19.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 306,
+      "held" : 302,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 2.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 215,
+      "held" : 214,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 1.7,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 77,
+      "held" : 74,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 4.6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 14,
+      "held" : 14,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 2.6,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 296,
+      "held" : 268,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 5.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 160,
+      "held" : 155,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 116,
+      "held" : 100,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 20,
+      "held" : 13,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 20.7,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 295,
+      "held" : 275,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 168,
+      "held" : 162,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 4.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 112,
+      "held" : 105,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 5.6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 15,
+      "held" : 8,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 28.5,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 294,
+      "held" : 270,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 6.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 149,
+      "held" : 144,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 5.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 124,
+      "held" : 111,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 5.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 21,
+      "held" : 15,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 15.7,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 306,
+      "held" : 266,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 6.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 180,
+      "held" : 173,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 3.2,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 88,
+      "held" : 70,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 10.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 38,
+      "held" : 23,
+      "lead" : 0,
+      "location" : "mt-baker",
+      "meanError" : 14.9,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 296,
+      "held" : 241,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 8.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 163,
+      "held" : 152,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 4.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 80,
+      "held" : 57,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 11.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 53,
+      "held" : 32,
+      "lead" : 1,
+      "location" : "mt-baker",
+      "meanError" : 16.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 295,
+      "held" : 227,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 9.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 168,
+      "held" : 154,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 5.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 79,
+      "held" : 52,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 12.9,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 48,
+      "held" : 21,
+      "lead" : 2,
+      "location" : "mt-baker",
+      "meanError" : 21,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 294,
+      "held" : 231,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 9.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 171,
+      "held" : 156,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 70,
+      "held" : 48,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 12.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 53,
+      "held" : 27,
+      "lead" : 3,
+      "location" : "mt-baker",
+      "meanError" : 16.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 138,
+      "held" : 111,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 9.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 60,
+      "held" : 51,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 8.8,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 42,
+      "held" : 32,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 9.2,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 36,
+      "held" : 28,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 10.8,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 138,
+      "held" : 115,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 9.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 41,
+      "held" : 36,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 8.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 66,
+      "held" : 57,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 5.8,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 31,
+      "held" : 22,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 17.7,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 138,
+      "held" : 99,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 14.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 48,
+      "held" : 35,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 11,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 58,
+      "held" : 45,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 12.1,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 32,
+      "held" : 19,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 24.3,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 138,
+      "held" : 105,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 12.6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 37,
+      "held" : 29,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 10.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 68,
+      "held" : 55,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 9.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 33,
+      "held" : 21,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 21.4,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 138,
+      "held" : 113,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 9.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 75,
+      "held" : 71,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 4.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 39,
+      "held" : 30,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 11.3,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 24,
+      "held" : 12,
+      "lead" : 0,
+      "location" : "snoqualmie",
+      "meanError" : 19.2,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 138,
+      "held" : 105,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 9.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 66,
+      "held" : 64,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 4.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 40,
+      "held" : 25,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 11.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 32,
+      "held" : 16,
+      "lead" : 1,
+      "location" : "snoqualmie",
+      "meanError" : 18.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 138,
+      "held" : 98,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 10.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 79,
+      "held" : 67,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 6.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 23,
+      "held" : 12,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 15.3,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 36,
+      "held" : 19,
+      "lead" : 2,
+      "location" : "snoqualmie",
+      "meanError" : 15.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 138,
+      "held" : 101,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 10.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 70,
+      "held" : 63,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 5.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 39,
+      "held" : 22,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 14.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 29,
+      "held" : 16,
+      "lead" : 3,
+      "location" : "snoqualmie",
+      "meanError" : 16.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 135,
+      "held" : 125,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 92,
+      "held" : 86,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 3.8,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 31,
+      "held" : 28,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 6.8,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 12,
+      "held" : 11,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 9.1,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 135,
+      "held" : 119,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 8.1,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 89,
+      "held" : 85,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 5.1,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 34,
+      "held" : 27,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 9.6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 12,
+      "held" : 7,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 26.5,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 135,
+      "held" : 119,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 7.6,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 86,
+      "held" : 75,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 7.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 37,
+      "held" : 35,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 5.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 12,
+      "held" : 9,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 15.3,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 135,
+      "held" : 112,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 8.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 80,
+      "held" : 75,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 6.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 43,
+      "held" : 29,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 10.8,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 12,
+      "held" : 8,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 12.5,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 135,
+      "held" : 118,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 6.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 79,
+      "held" : 77,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 3.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 38,
+      "held" : 32,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 8.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 18,
+      "held" : 9,
+      "lead" : 0,
+      "location" : "stevens-pass",
+      "meanError" : 18,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 135,
+      "held" : 108,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 8.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 88,
+      "held" : 80,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 5.4,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 28,
+      "held" : 17,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 12.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 19,
+      "held" : 11,
+      "lead" : 1,
+      "location" : "stevens-pass",
+      "meanError" : 18.2,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 135,
+      "held" : 108,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 8.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 80,
+      "held" : 72,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 4.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 33,
+      "held" : 22,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 15.3,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 22,
+      "held" : 14,
+      "lead" : 2,
+      "location" : "stevens-pass",
+      "meanError" : 12.9,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 135,
+      "held" : 101,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 9.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 82,
+      "held" : 72,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 5.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 32,
+      "held" : 20,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 13.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 21,
+      "held" : 9,
+      "lead" : 3,
+      "location" : "stevens-pass",
+      "meanError" : 19.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 330,
+      "held" : 306,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 4.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 223,
+      "held" : 216,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 2.8,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 99,
+      "held" : 82,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 8.5,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 8,
+      "held" : 8,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 3.3,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 320,
+      "held" : 298,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 5.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 163,
+      "held" : 161,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 3.4,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 144,
+      "held" : 128,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 7.2,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 13,
+      "held" : 9,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 23.1,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 319,
+      "held" : 293,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 5.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 202,
+      "held" : 189,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 4.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 107,
+      "held" : 96,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 6.1,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 10,
+      "held" : 8,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 15.3,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 318,
+      "held" : 297,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 4.7,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 183,
+      "held" : 180,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 3.3,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 126,
+      "held" : 110,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 5.9,
+      "terrain" : "groomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 9,
+      "held" : 7,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 16.2,
+      "terrain" : "groomed"
+    },
+    {
+      "days" : 330,
+      "held" : 277,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 7.2,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 209,
+      "held" : 196,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 4.2,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 87,
+      "held" : 55,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 12.9,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 34,
+      "held" : 26,
+      "lead" : 0,
+      "location" : "whistler",
+      "meanError" : 11.1,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 320,
+      "held" : 267,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 8.3,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 194,
+      "held" : 175,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 5.5,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 89,
+      "held" : 70,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 10.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 37,
+      "held" : 22,
+      "lead" : 1,
+      "location" : "whistler",
+      "meanError" : 17.2,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 319,
+      "held" : 252,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 9.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 212,
+      "held" : 191,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 5.8,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 70,
+      "held" : 45,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 13.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 37,
+      "held" : 16,
+      "lead" : 2,
+      "location" : "whistler",
+      "meanError" : 24.7,
+      "terrain" : "ungroomed"
+    },
+    {
+      "days" : 318,
+      "held" : 253,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 9.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "agree",
+      "days" : 201,
+      "held" : 179,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 5.9,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "differ",
+      "days" : 79,
+      "held" : 56,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 12.6,
+      "terrain" : "ungroomed"
+    },
+    {
+      "agreement" : "disagree",
+      "days" : 38,
+      "held" : 18,
+      "lead" : 3,
+      "location" : "whistler",
+      "meanError" : 23.2,
+      "terrain" : "ungroomed"
+    }
+  ],
+  "holdMarginPoints" : 15,
+  "seasons" : [
+    "2024-01-08...2024-04-15",
+    "2024-12-01...2025-04-15",
+    "2025-12-01...2026-04-15"
+  ]
+}

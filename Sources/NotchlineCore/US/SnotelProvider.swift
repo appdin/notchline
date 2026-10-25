@@ -20,21 +20,45 @@ public struct SnotelProvider: ObservedSnowProvider {
         }
     }
 
+    /// Hourly depth and temperature from `start` through `end`, for the confidence backtest.
+    public func history(station: SnotelStation, from start: Date, through end: Date) async throws -> StationHistory {
+        let (depth, temps) = try Self.readings(try await http.get(Self.requestURL(station: station, from: start, through: end)), station: station, latest: end)
+        return StationHistory(
+            stationName: station.name, elevationFt: station.elevationFt,
+            depthInches: Dictionary(depth.map { ($0.date, $0.value) }, uniquingKeysWith: { first, _ in first }),
+            tempF: Dictionary(temps.map { ($0.date, $0.value) }, uniquingKeysWith: { first, _ in first }))
+    }
+
     static func requestURL(station: SnotelStation, now: Date) -> URL {
+        requestURL(station: station, from: now.addingTimeInterval(-30 * 60 * 60), through: now.addingTimeInterval(60 * 60))
+    }
+
+    static func requestURL(station: SnotelStation, from start: Date, through end: Date) -> URL {
         let formatter = stationDateFormatter(station)
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "stationTriplets", value: station.triplet),
             URLQueryItem(name: "elements", value: "SNWD,TOBS"),
             URLQueryItem(name: "duration", value: "HOURLY"),
-            URLQueryItem(name: "beginDate", value: formatter.string(from: now.addingTimeInterval(-30 * 60 * 60))),
-            URLQueryItem(name: "endDate", value: formatter.string(from: now.addingTimeInterval(60 * 60))),
+            URLQueryItem(name: "beginDate", value: formatter.string(from: start)),
+            URLQueryItem(name: "endDate", value: formatter.string(from: end)),
             URLQueryItem(name: "returnFlags", value: "true"),
         ]
         return components.url!
     }
 
     static func parse(_ data: Data, station: SnotelStation, now: Date) throws -> ObservedSnow {
+        let (depth, temps) = try readings(data, station: station, latest: now.addingTimeInterval(60 * 60))
+        return try StationReadings.observation(
+            depth: depth,
+            airTemp: temps,
+            stationName: station.name,
+            stationElevationFt: station.elevationFt,
+            stationID: station.triplet)
+    }
+
+    /// Depth and temperature readings no later than `latest`, without suspect values.
+    static func readings(_ data: Data, station: SnotelStation, latest: Date) throws -> (depth: [StationReadings.Reading], temps: [StationReadings.Reading]) {
         let response = try JSONDecoder().decode([StationData].self, from: data)
         let elements = response.first?.data ?? []
         guard let depthValues = elements.first(where: { $0.stationElement.elementCode == "SNWD" })?.values else {
@@ -45,17 +69,12 @@ public struct SnotelProvider: ObservedSnowProvider {
             values.compactMap { value in
                 guard let number = value.value, allowNegative || number >= 0, value.qcFlag != "S",
                       let date = formatter.date(from: value.date),
-                      date <= now.addingTimeInterval(60 * 60) else { return nil }
+                      date <= latest else { return nil }
                 return StationReadings.Reading(date: date, value: number)
             }
         }
         let temps = elements.first(where: { $0.stationElement.elementCode == "TOBS" }).map { readings($0.values, allowNegative: true) }
-        return try StationReadings.observation(
-            depth: readings(depthValues, allowNegative: false),
-            airTemp: temps ?? [],
-            stationName: station.name,
-            stationElevationFt: station.elevationFt,
-            stationID: station.triplet)
+        return (readings(depthValues, allowNegative: false), temps ?? [])
     }
 
     /// AWDB dates are "yyyy-MM-dd HH:mm" in the station's fixed standard time offset, with no DST.

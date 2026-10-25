@@ -4,9 +4,12 @@ import NotchlineCore
 // Debug command: fetch a live snapshot for one location and print it.
 // Usage: notchline-fetch [location-id] [--json] [--home lat,lon]
 //        notchline-fetch [location-id] --score-history yyyy-MM-dd yyyy-MM-dd
+//        notchline-fetch --backtest-confidence [--out path] [--cache dir]
 // --score-history scores every day in the range from Open-Meteo's archived forecasts and prints
 // one tab-separated line per day, for checking the planner against known storm days.
 // --home adds departure times from that point, with Apple Maps drive times and default settings.
+// --backtest-confidence measures how often scores held at each location with a station and writes
+// the confidence table, see scripts/backtest-confidence.sh. --cache keeps responses on disk.
 
 let args = CommandLine.arguments.dropFirst()
 let wantsJSON = args.contains("--json")
@@ -19,7 +22,96 @@ if args.contains("--list") {
     exit(0)
 }
 
-let homeArgument = args.firstIndex(of: "--home").flatMap { args.index(after: $0) < args.endIndex ? args[args.index(after: $0)] : nil }
+func value(after flag: String) -> String? {
+    args.firstIndex(of: flag).flatMap { args.index(after: $0) < args.endIndex ? args[args.index(after: $0)] : nil }
+}
+
+/// Keeps responses on disk by URL, so rerunning the backtest does not spend Open-Meteo's daily quota again.
+struct DiskCachedHTTPClient: HTTPClient {
+    let inner: HTTPClient
+    let directory: URL
+
+    func get(_ url: URL) async throws -> Data {
+        // FNV-1a, stable across runs unlike Hasher.
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in url.absoluteString.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+        let file = directory.appendingPathComponent(String(hash, radix: 16))
+        if let data = try? Data(contentsOf: file) { return data }
+        let data = try await inner.get(url)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try data.write(to: file)
+        return data
+    }
+}
+
+if args.contains("--backtest-confidence") {
+    var http: HTTPClient = RetryingHTTPClient(URLSessionHTTPClient(timeout: 300), retries: 2)
+    if let cache = value(after: "--cache") { http = DiskCachedHTTPClient(inner: http, directory: URL(fileURLWithPath: cache)) }
+    let openMeteo = OpenMeteoProvider(http: http)
+    // Previous Runs starts in January 2024, so the first season starts a week in, once runs from
+    // 3 days ahead exist. Seasons run December through mid-April.
+    let seasons = [("2024-01-08", "2024-04-15"), ("2024-12-01", "2025-04-15"), ("2025-12-01", "2026-04-15")]
+    let gust = PlannerSettings.default.gustThresholdMph
+    var samples: [ConfidenceBacktest.Sample] = []
+    func log(_ line: String) { FileHandle.standardError.write(Data("\(line)\n".utf8)) }
+    for location in catalog.locations where location.liftHours != nil {
+        let calendar = location.calendar
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let ranges = seasons.map { (formatter.date(from: $0.0)!, formatter.date(from: $0.1)!) }
+        let start = calendar.date(byAdding: .day, value: -1, to: ranges.first!.0)!
+        let end = calendar.date(byAdding: .day, value: 2, to: ranges.last!.1)!
+        let history: StationHistory
+        switch location.observedSnow {
+        case .snotel(let stations)? where !stations.isEmpty:
+            history = try await SnotelProvider(http: http).history(station: stations[0], from: start, through: end)
+        case .bcSnowStations(let stations)? where !stations.isEmpty:
+            history = try await BCSnowStationProvider(http: http).archiveHistory(station: stations[0], from: start, through: end)
+        default:
+            log("\(location.id): no station, uses every location's figures")
+            continue
+        }
+        var covered = 0
+        for (first, last) in ranges {
+            func score(_ hourly: HourlyForecast) -> PlannerScores {
+                SkiDayScorer.score(hourly, location: location, now: first, gustThresholdMph: gust)
+            }
+            var observed: (scores: PlannerScores, days: Set<Date>)?
+            for lead in 0...3 {
+                let runs = try await openMeteo.previousRuns(for: location, from: first, through: last, lead: lead)
+                if observed == nil {
+                    let record = ConfidenceBacktest.observed(runs.forecast, station: history, location: location)
+                    // The first day has no snow from before the range.
+                    observed = (score(record.hourly), record.coveredDays.filter { $0 > calendar.startOfDay(for: first) })
+                    covered += observed!.days.count
+                }
+                samples += ConfidenceBacktest.samples(
+                    location: location, lead: lead, forecast: score(runs.forecast), models: runs.models.values.map(score),
+                    observed: observed!.scores, coveredDays: observed!.days)
+            }
+        }
+        log("\(location.id): \(covered) days with \(history.stationName) readings")
+    }
+    let table = ConfidenceBacktest.table(samples, seasons: seasons.map { "\($0.0)...\($0.1)" })
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let json = try encoder.encode(table)
+    if let out = value(after: "--out") {
+        try json.write(to: URL(fileURLWithPath: out))
+    } else {
+        print(String(decoding: json, as: UTF8.self))
+    }
+    log("location\tterrain\tlead\tagreement\tdays\theld\tmeanError")
+    for cell in table.cells {
+        log([cell.location ?? "all", cell.terrain.rawValue, "+\(cell.lead)", cell.agreement?.rawValue ?? "any", "\(cell.days)",
+             "\(Int((100 * Double(cell.held) / Double(cell.days)).rounded()))%", String(format: "%.1f", cell.meanError)].joined(separator: "\t"))
+    }
+    exit(0)
+}
+
+let homeArgument = value(after: "--home")
 let positional = args.filter { !$0.hasPrefix("--") && $0 != homeArgument }
 let requestedID = positional.first ?? LocationCatalog.defaultLocationID
 guard let location = catalog.location(id: requestedID) else {
@@ -116,9 +208,26 @@ if let forecast = snapshot.forecast {
         print("  Hourly     unavailable")
     }
     if let hourly = forecast.hourly {
-        let scores = SkiDayScorer.score(
-            hourly, location: location, now: Date(), gustThresholdMph: PlannerSettings.default.gustThresholdMph,
-            priorSnowInches: SkiDayScorer.priorSnowInches(observed: snapshot.observed, hourly: hourly))
+        func score(_ hourly: HourlyForecast) -> PlannerScores {
+            SkiDayScorer.score(
+                hourly, location: location, now: Date(), gustThresholdMph: PlannerSettings.default.gustThresholdMph,
+                priorSnowInches: SkiDayScorer.priorSnowInches(observed: snapshot.observed, hourly: hourly))
+        }
+        var modelWarnings: [String] = []
+        let models: [HourlyForecast]
+        do {
+            models = Array(try await OpenMeteoProvider(http: RetryingHTTPClient(URLSessionHTTPClient())).modelForecasts(for: location, now: Date()).values)
+        } catch {
+            models = []
+            modelWarnings.append("No comparison models (\(error)); confidence goes by lead alone")
+        }
+        var table: ConfidenceTable?
+        do {
+            table = try ConfidenceTable.bundled()
+        } catch {
+            modelWarnings.append("No confidence table (\(error)); confidence uses the rule")
+        }
+        let scores = ForecastConfidence.apply(to: score(hourly), models: models.map(score), location: location, now: Date(), table: table)
         let dayFormatter = DateFormatter()
         dayFormatter.timeZone = location.calendar.timeZone
         dayFormatter.dateFormat = "EEE"
@@ -132,9 +241,13 @@ if let forecast = snapshot.forecast {
             let label = index == 0 ? "  Scores     " : "             "
             let vetoes = Set(day.hours.compactMap(\.veto)).map(\.rawValue).sorted()
             let held = vetoes.isEmpty ? "" : "  vetoed: \(vetoes.joined(separator: ", "))"
-            print("\(label)\(dayFormatter.string(from: day.day))  groomed \(describe(day.groomed))  ungroomed \(describe(day.ungroomed))  new \(ConditionsFormat.snow(day.newSnowInches, units))\(held)")
+            let confidence = day.confidence.map { confidence in
+                let spread = confidence.ungroomed.modelSpread.map { ", models within \($0)" } ?? ""
+                return "  confidence \(confidence.groomed.percent)%/\(confidence.ungroomed.percent)%\(confidence.ungroomed.isMeasured ? "" : " (rule)")\(spread)"
+            } ?? ""
+            print("\(label)\(dayFormatter.string(from: day.day))  groomed \(describe(day.groomed))  ungroomed \(describe(day.ungroomed))  new \(ConditionsFormat.snow(day.newSnowInches, units))\(held)\(confidence)")
         }
-        var plannerWarnings = scores.warnings
+        var plannerWarnings = scores.warnings + modelWarnings
         if let homeArgument {
             let parts = homeArgument.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
             guard parts.count == 2 else {
@@ -148,7 +261,7 @@ if let forecast = snapshot.forecast {
                 travel: CachedTravelTimes(MapKitTravelTimes()),
                 roadWeather: OpenMeteoProvider(http: RetryingHTTPClient(URLSessionHTTPClient())).roadWeather)
             let plan = await planner.plan(scores, hourly: hourly, location: location, settings: settings, now: now)
-            plannerWarnings = plan.warnings
+            plannerWarnings = plan.warnings + modelWarnings
             for (index, day) in plan.days.enumerated() {
                 for terrain in Terrain.allCases {
                     guard let departure = day.departure(terrain) else { continue }
