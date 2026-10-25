@@ -110,14 +110,11 @@ struct UnitConversionTests {
     }
 
     /// Conversion factors live only in UnitConversion.swift.
-    @Test func noInlineConversionFactors() throws {
-        let sources = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "Sources")
+    @Test(.enabled(if: RepoSources.available, "needs the repo's sources on disk"))
+    func noInlineConversionFactors() throws {
         let factors = ["2.54", "25.4", "3.28084", "0.3048", "1.609344", "9 / 5", "5 / 9"]
-        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
-            .compactMap { $0 as? URL }
-            .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "UnitConversion.swift" }
+        let files = try RepoSources.swiftFiles(excluding: ["UnitConversion.swift"])
+        #expect(!files.isEmpty)
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
             for factor in factors where text.contains(factor) {
@@ -169,15 +166,11 @@ struct ProviderWarningsTests {
     }
 
     /// Errors are recorded or thrown, never dropped with try? inside NotchlineCore.
-    @Test func noSilentlyDroppedErrors() throws {
-        let sources = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "Sources/NotchlineCore")
+    @Test(.enabled(if: RepoSources.available, "needs the repo's sources on disk"))
+    func noSilentlyDroppedErrors() throws {
         // The snapshot cache is best effort by design: an unreadable file just means no cache.
-        let allowed = ["SnapshotStore.swift", "ConditionsModel.swift"]
-        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
-            .compactMap { $0 as? URL }
-            .filter { $0.pathExtension == "swift" && !allowed.contains($0.lastPathComponent) }
+        let files = try RepoSources.swiftFiles(in: "NotchlineCore", excluding: ["SnapshotStore.swift", "ConditionsModel.swift"])
+        #expect(!files.isEmpty)
         for file in files where try String(contentsOf: file, encoding: .utf8).contains("try?") {
             Issue.record("\(file.lastPathComponent) uses try?; record a ProviderWarnings message or throw")
         }

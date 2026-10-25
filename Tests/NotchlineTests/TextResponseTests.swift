@@ -26,15 +26,11 @@ struct TextResponseTests {
 
     /// Text parsing goes through `TextResponse` so every data source handles CRLF, lone CR and a
     /// byte order mark. This fails if a file in NotchlineCore splits on "\n" or decodes text itself.
-    @Test func sourcesUseTextResponseForText() throws {
-        let sources = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "Sources/NotchlineCore")
+    @Test(.enabled(if: RepoSources.available, "needs the repo's sources on disk"))
+    func sourcesUseTextResponseForText() throws {
         let forbidden = [#"separator: "\n""#, #"separatedBy: "\n""#, #"separatedBy: .newlines"#,
                          #"contains("\n")"#, #"String(decoding:"#, #"String(data:"#]
-        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
-            .compactMap { $0 as? URL }
-            .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "TextResponse.swift" }
+        let files = try RepoSources.swiftFiles(in: "NotchlineCore", excluding: ["TextResponse.swift"])
         #expect(!files.isEmpty)
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)

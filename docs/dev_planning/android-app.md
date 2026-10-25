@@ -9,13 +9,14 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 - **One Swift core for both platforms.** `NotchlineCore` is compiled for Android with the Swift SDK for Android rather than ported to Kotlin, so scoring and confidence logic exist once. A spike built the core and its tests for `aarch64-unknown-linux-android28` with Swift 6.4.1 and NDK r30 and ran them on an API 36 arm64 emulator: 170 of 171 passed. The one failure, `sourcesUseTextResponseForText`, reads the repo's sources through `#filePath` and can't find them on a device.
 - **UI in Kotlin and Jetpack Compose.** The Mac app layer (AppKit, SwiftUI, DynamicNotchKit) stays Mac only.
 - **arm64-v8a only.** Current phones are all arm64. armv7 and x86_64 can be added later if an emulator or device needs them.
+- **Hand-written JNI bridge, JSON across it.** Kotlin calls a few `external` functions in `android/swift/Sources/NotchlineJNI`. Values cross as UTF-8 JSON in byte arrays, since the core's models are already `Codable` and JNI strings are modified UTF-8, which breaks on emoji. Native calls block until the core's async work finishes, and Kotlin makes them on the IO dispatcher. Chosen in Phase 1 over swift-java, which adds a code generator to the build for a bridge this small.
+- **Swift runtime linked statically into the app.** One `libNotchlineJNI.so` (56 MB stripped, mostly ICU data) plus `libc++_shared.so`, against about 100 MB for the shared runtime libraries. Only the device test runner links the runtime dynamically, because Swift Testing ships only as shared libraries.
 - **Platform code stays behind the core's existing seams.** The spike gated MapKit (`#if canImport(MapKit)`), Combine view models (`#if canImport(Combine)`) and added `FoundationNetworking` where `URLSession` lives on Android. `SkiDayPlanner.live(travel:)` takes any `TravelTimeProvider`.
 - **No drive times in the Android app. Google Maps does the drive.** The app doesn't estimate drive times or departures. Instead, each planned day has a button that opens Google Maps with driving directions to the resort already loaded (a Maps URL with `api=1`, `destination` set to the location's coordinate and `travelmode=driving`). Google Maps then gives the live ETA and handles navigation. Maps URLs can't set an arrive-by time, so the user checks the ETA in Maps against the lift time the app shows.
 - **No departures on Android at all.** The departure planner (departure times, route-midpoint road weather, crowd buffers, the overnight option) and departure reminders are left out rather than approximated. The scores, best windows and confidence are unchanged. The only planner notification is the evening-before summary.
 
 ## Open questions
 
-- **Swift to Kotlin bridge.** swift-java (jextract generating Java bindings) or a hand-written JNI layer over a small C-compatible API. swift-java is less code if it handles async and Codable types well enough. Phase 1 decides.
 - **View models.** `ConditionsModel` and `PlannerModel` use Combine, which Android lacks. Either Kotlin owns the screen state and calls plain core functions, or the models move to Swift's `@Observable` (Observation ships in the Android SDK), which needs the Mac minimum raised from macOS 13 to 14.
 - **Storage paths.** `SnapshotStore` and `PlannerArchive` default to Application Support. On Android the app should pass its own `filesDir` rather than rely on Foundation's mapping.
 - **Background refresh.** WorkManager periodic work has a 15 minute floor and Samsung's battery optimization delays or drops it. The evening-before summary may need an exact alarm (`SCHEDULE_EXACT_ALARM`) to arrive at its set time.
@@ -25,7 +26,7 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Spike: build `NotchlineCore` and its tests for Android and run them on an emulator | Done 2026-10-25 |
-| 1 | Build setup: core as an Android library, Gradle project, Swift to Kotlin bridge, CI build | Not started |
+| 1 | Build setup: core as an Android library, Gradle project, Swift to Kotlin bridge, CI build | Done 2026-10-25, CI workflow not yet run |
 | 2 | Conditions: location picker, current conditions and avalanche danger on an app screen | Not started |
 | 3 | Planner: scores, best windows and confidence, with a Google Maps directions button per day | Not started |
 | 4 | Background and notifications: periodic refresh, evening-before summaries, ratings | Not started |
@@ -49,6 +50,17 @@ As built:
 - Pick the bridge (see Open questions) and expose a first call end to end: fetch a snapshot for one location and show its JSON in a Compose screen.
 - Skip the `#filePath` source-scanning tests when the sources aren't on disk, so a device test run is clean.
 - A script or Gradle task that builds the core, runs its tests on a connected device or emulator and assembles a debug APK.
+
+As built:
+
+- `android/swift` is a second Swift package for Android. Its `NotchlineCore` and `NotchlineTests` are symlinks into the root package, so both platforms build the same sources and the root `Package.swift` is unchanged. It adds `CJNI` (exports `<jni.h>`) and `NotchlineJNI`, a dynamic library product with the JNI entry points. `.swift-version` pins the toolchain for swiftly.
+- `NotchlineJNI` exposes `configure(locationsJson)` and `refresh(locationId)`. `refresh` returns the snapshot with its errors and warnings. A shared `ConditionsService` keeps provider caches across calls. Errors come back to Kotlin as `IllegalStateException`.
+- An app process can't use `Bundle.module`, so the app copies `locations.json` into its assets at build time and passes it to `configure`, which uses `LocationCatalog.load(from:)`. Phase 3 needs the same for `confidence.json`.
+- A static FoundationNetworking links curl but not the TLS libraries curl needs, so `NotchlineJNI` links the SDK's static `libssl`, `libcrypto` and the system `libz`. Without them the library fails to load with an unresolved `X509_free`. HTTPS works on the emulator with the system's CA certificates and no extra setup.
+- `android/` is a Gradle project (AGP 9.3.1, Gradle 9.6.1, Kotlin with Compose, compileSdk 37 since Compose BOM 2026.09.00 needs it, minSdk 28, targetSdk 36, arm64-v8a only). The `buildNotchlineCore` task runs `scripts/android.sh core` before each build, and AGP strips the library.
+- `MainActivity` is the end-to-end check: a chip per location, a Refresh button and the snapshot JSON. It loads live NWS, NWAC and SNOTEL data for Mt. Baker on an API 36 emulator.
+- The source-scanning tests use `RepoSources` in `Support.swift` and are skipped when the sources aren't on disk. A device run is 171 tests passing with those 3 skipped.
+- `scripts/android.sh` has `core`, `test` (build, push and run the tests on the connected device) and `apk`. `make android` and `make android-test` call it. `.github/workflows/android.yml` builds the APK on macOS for pushes and pull requests that touch the core or the app, and uploads it. It hasn't run yet. Tests need an arm64 device, so CI doesn't run them.
 
 ### Phase 2 - conditions
 

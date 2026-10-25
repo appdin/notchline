@@ -18,6 +18,24 @@ enum Fixture {
     }
 }
 
+/// The repo's source tree, for tests that scan source files. Absent when tests run on an Android
+/// device, where only the test binary and its bundles are pushed.
+enum RepoSources {
+    static let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "Sources")
+
+    static var available: Bool { FileManager.default.fileExists(atPath: root.appending(path: "NotchlineCore").path) }
+
+    /// The Swift files under `path` (relative to Sources), except those named in `excluding`.
+    static func swiftFiles(in path: String? = nil, excluding: [String] = []) throws -> [URL] {
+        let directory = path.map { root.appending(path: $0) } ?? root
+        return try #require(FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil))
+            .compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "swift" && !excluding.contains($0.lastPathComponent) }
+    }
+}
+
 /// Serves canned responses by matching a substring of the request URL. Unmatched requests fail.
 struct StubHTTPClient: HTTPClient {
     var routes: [(match: String, response: Result<Data, ProviderError>)]
