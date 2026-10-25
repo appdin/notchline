@@ -12,6 +12,7 @@ import com.appdin.notchline.core.CatalogLocation
 import com.appdin.notchline.core.CatalogRegion
 import com.appdin.notchline.core.ConditionsSummary
 import com.appdin.notchline.core.NotchlineCore
+import com.appdin.notchline.core.PlannerSummary
 import com.appdin.notchline.core.UnitPreference
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,16 +26,24 @@ data class ConditionsUiState(
     val location: CatalogLocation,
     val units: UnitPreference,
     val summary: ConditionsSummary? = null,
+    val planner: PlannerSummary? = null,
+    /** [location] was planned this session, so a null [planner] means there was nothing to plan from. */
+    val planned: Boolean = false,
+    /** Stands in for a null [planner] once planned. */
+    val plannerMessage: String? = null,
+    val scoreHelp: List<String> = emptyList(),
     /** True while this screen's own refresh of [location] runs, before the core reports it. */
     val refreshing: Boolean = false,
+    val planning: Boolean = false,
     /** A bridge failure, such as an unknown location. Failed sources show in [summary] instead. */
     val error: String? = null,
 )
 
 /**
- * Screen state for the conditions screen. The core owns the snapshots and their cache rules; this
+ * Screen state for the conditions screen. The core owns the snapshots, plans and their rules; this
  * holds the selection and units, and decides when to refresh: on launch, on location change, on
- * returning to the app after the refresh interval, and when the network comes back.
+ * returning to the app after the refresh interval, and when the network comes back. Each refresh
+ * replans, as on the Mac, and a location shown from the cache is planned from it.
  */
 class ConditionsViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("notchline", Context.MODE_PRIVATE)
@@ -52,6 +61,9 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
 
     /** Elapsed-realtime of the last refresh per location this session. */
     private val lastRefresh = mutableMapOf<String, Long>()
+    /** Locations being planned now, and those to plan again when that finishes. Main thread only. */
+    private val planning = mutableSetOf<String>()
+    private val replan = mutableSetOf<String>()
     @Volatile private var networkWasDown = false
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -81,7 +93,9 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
     fun select(location: CatalogLocation) {
         if (location.id == _state.value.location.id) return
         prefs.edit().putString(SELECTED_LOCATION_KEY, location.id).apply()
-        _state.update { it.copy(location = location, summary = null, refreshing = false, error = null) }
+        _state.update {
+            it.copy(location = location, summary = null, planner = null, planned = false, plannerMessage = null, refreshing = false, planning = false, error = null)
+        }
         viewModelScope.launch {
             reload()
             refresh()
@@ -118,8 +132,14 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
     private suspend fun reload() {
         val (location, units) = _state.value.let { it.location to it.units }
         try {
-            val summary = NotchlineCore.conditions(location.id, units)
-            _state.update { if (it.location.id == location.id) it.copy(summary = summary, error = null) else it }
+            val response = NotchlineCore.conditions(location.id, units)
+            _state.update {
+                if (it.location.id != location.id) return@update it
+                it.copy(
+                    summary = response.conditions, planner = response.planner, planned = response.planned,
+                    plannerMessage = response.plannerMessage, scoreHelp = response.scoreHelp, error = null)
+            }
+            if (!response.planned) viewModelScope.launch { plan(location) }
         } catch (error: IllegalStateException) {
             fail(location, error)
         }
@@ -134,14 +154,34 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
             // Units may have changed during the fetch, so reread rather than show the returned summary.
             _state.update { if (it.location.id == location.id) it.copy(refreshing = false) else it }
             reload()
+            plan(location)
         } catch (error: IllegalStateException) {
             fail(location, error)
         }
     }
 
+    private suspend fun plan(location: CatalogLocation) {
+        if (!planning.add(location.id)) {
+            // A refresh landed during the plan, so the plan is from the snapshot before it.
+            replan.add(location.id)
+            return
+        }
+        _state.update { if (it.location.id == location.id) it.copy(planning = true) else it }
+        try {
+            NotchlineCore.plan(location.id, _state.value.units)
+            _state.update { if (it.location.id == location.id) it.copy(planning = false) else it }
+            reload()
+        } catch (error: IllegalStateException) {
+            fail(location, error)
+        } finally {
+            planning.remove(location.id)
+            if (replan.remove(location.id)) viewModelScope.launch { plan(location) }
+        }
+    }
+
     private fun fail(location: CatalogLocation, error: IllegalStateException) {
         Log.e(TAG, "${location.id}: ${error.message}")
-        _state.update { if (it.location.id == location.id) it.copy(refreshing = false, error = error.message) else it }
+        _state.update { if (it.location.id == location.id) it.copy(refreshing = false, planning = false, error = error.message) else it }
     }
 
     private fun resolve(id: String?): CatalogLocation =

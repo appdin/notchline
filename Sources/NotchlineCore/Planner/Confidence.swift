@@ -103,7 +103,12 @@ public struct ConfidenceTable: Codable, Equatable, Sendable {
         let url = Bundle.main.url(forResource: "confidence", withExtension: "json")
             ?? Bundle.module.url(forResource: "confidence", withExtension: "json")
         guard let url else { throw CocoaError(.fileNoSuchFile) }
-        return try JSONDecoder().decode(ConfidenceTable.self, from: Data(contentsOf: url))
+        return try load(from: Data(contentsOf: url))
+    }
+
+    /// A table from `confidence.json`'s contents, for an app process that can't use `Bundle.module`.
+    public static func load(from data: Data) throws -> ConfidenceTable {
+        try JSONDecoder().decode(ConfidenceTable.self, from: data)
     }
 
     func cell(_ location: String?, _ terrain: Terrain, _ lead: Int, _ agreement: ModelAgreement?) -> Cell? {

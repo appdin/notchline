@@ -1,18 +1,20 @@
 import Foundation
 
 /// The whole planner for one location: scores from the snapshot's hourly forecast, confidence
-/// from the comparison models, then departures. The app and `notchline-fetch` both plan through it.
+/// from the comparison models, then departures when there is a way to get drive times. The apps
+/// and `notchline-fetch` all plan through it.
 public struct SkiDayPlanner: Sendable {
     /// The comparison models' hourly series, keyed by model.
     public typealias ModelForecasts = @Sendable (Location, Date) async throws -> [String: HourlyForecast]
 
-    private let travel: TravelTimeProvider
+    /// nil plans without departures, as the Android app does.
+    private let travel: TravelTimeProvider?
     private let roadWeather: RoadWeatherProvider?
     private let modelForecasts: ModelForecasts?
     private let table: ConfidenceTable?
     private let tableWarning: String?
 
-    public init(travel: TravelTimeProvider, roadWeather: RoadWeatherProvider?, modelForecasts: ModelForecasts?, table: ConfidenceTable?, tableWarning: String? = nil) {
+    public init(travel: TravelTimeProvider?, roadWeather: RoadWeatherProvider?, modelForecasts: ModelForecasts?, table: ConfidenceTable?, tableWarning: String? = nil) {
         self.travel = travel
         self.roadWeather = roadWeather
         self.modelForecasts = modelForecasts
@@ -27,19 +29,24 @@ public struct SkiDayPlanner: Sendable {
     }
     #endif
 
-    /// `travel` drive times, Open-Meteo road weather and comparison models, and the bundled confidence table.
-    public static func live(travel: TravelTimeProvider, http: HTTPClient = RetryingHTTPClient(URLSessionHTTPClient())) -> SkiDayPlanner {
+    /// `travel` drive times with Open-Meteo road weather, or no departures when nil, plus
+    /// Open-Meteo comparison models and the confidence table from `table`, normally the bundled one.
+    public static func live(
+        travel: TravelTimeProvider?,
+        table loadTable: () throws -> ConfidenceTable = ConfidenceTable.bundled,
+        http: HTTPClient = RetryingHTTPClient(URLSessionHTTPClient())
+    ) -> SkiDayPlanner {
         let openMeteo = OpenMeteoProvider(http: http)
         var table: ConfidenceTable?
         var tableWarning: String?
         do {
-            table = try ConfidenceTable.bundled()
+            table = try loadTable()
         } catch {
             tableWarning = "No confidence table (\(error)); confidence uses the rule"
         }
         return SkiDayPlanner(
-            travel: CachedTravelTimes(travel),
-            roadWeather: openMeteo.roadWeather,
+            travel: travel.map { CachedTravelTimes($0) as TravelTimeProvider },
+            roadWeather: travel == nil ? nil : openMeteo.roadWeather,
             modelForecasts: { try await openMeteo.modelForecasts(for: $0, now: $1) },
             table: table, tableWarning: tableWarning)
     }
@@ -62,8 +69,13 @@ public struct SkiDayPlanner: Sendable {
             }
         }
         let scores = ForecastConfidence.apply(to: score(hourly), models: models.map(score), location: location, now: now, table: table)
-        var plan = await DeparturePlanner(travel: travel, roadWeather: roadWeather)
-            .plan(scores, hourly: hourly, location: location, settings: settings, now: now)
+        var plan: SkiDayPlan
+        if let travel {
+            plan = await DeparturePlanner(travel: travel, roadWeather: roadWeather)
+                .plan(scores, hourly: hourly, location: location, settings: settings, now: now)
+        } else {
+            plan = SkiDayPlan(days: scores.days.map { PlannedDay(score: $0) }, warnings: scores.warnings)
+        }
         plan.warnings += warnings
         return plan
     }

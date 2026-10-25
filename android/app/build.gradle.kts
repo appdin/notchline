@@ -38,9 +38,9 @@ val buildNotchlineCore = tasks.register<Exec>("buildNotchlineCore") {
     commandLine(repoRoot.resolve("scripts/android.sh").path, "core", jniLibsDir.get().asFile.path)
 }
 
-// The location catalog, passed to the core at startup since an app process can't use Bundle.module.
+// The location catalog and confidence table, passed to the core at startup since an app process can't use Bundle.module.
 val copyNotchlineAssets = tasks.register<Copy>("copyNotchlineAssets") {
-    from(repoRoot.resolve("Sources/NotchlineCore/Resources/locations.json"))
+    from(repoRoot.resolve("Sources/NotchlineCore/Resources/locations.json"), repoRoot.resolve("Sources/NotchlineCore/Resources/confidence.json"))
     into(assetsDir)
 }
 

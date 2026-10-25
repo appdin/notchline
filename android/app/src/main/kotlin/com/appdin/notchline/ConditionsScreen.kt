@@ -57,8 +57,8 @@ import com.appdin.notchline.core.UnitPreference
 private const val DIMMED_ALPHA = 0.45f
 
 /**
- * Header with the location picker and units menu, the snow, temperature and wind metrics and the
- * avalanche summary. Pull down to refresh. Tapping a value with problems in its last refresh
+ * Header with the location picker and units menu, the snow, temperature and wind metrics, the
+ * avalanche summary and the planner. Pull down to refresh. Tapping a value with problems in its last refresh
  * explains them, where the Mac shows a tooltip.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,7 +69,9 @@ fun ConditionsScreen(
     onUnits: (UnitPreference) -> Unit,
     onRefresh: () -> Unit,
 ) {
-    var problems by remember { mutableStateOf<List<String>?>(null) }
+    // A dialog's title and lines: a value's refresh problems, confidence notes or planner warnings.
+    var explanation by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
+    val showProblems: (List<String>) -> Unit = { explanation = "Last refresh" to it }
     val refreshing = state.refreshing || state.summary?.isRefreshing == true
 
     Scaffold(
@@ -94,20 +96,22 @@ fun ConditionsScreen(
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
                 state.summary?.let { summary ->
-                    Metrics(summary) { problems = it }
+                    Metrics(summary, showProblems)
                     HorizontalDivider()
-                    Avalanche(summary.avalanche) { problems = it }
+                    Avalanche(summary.avalanche, showProblems)
+                    HorizontalDivider()
+                    PlannerSection(state) { title, lines -> explanation = title to lines }
                 }
             }
         }
     }
 
-    problems?.let {
+    explanation?.let { (title, lines) ->
         AlertDialog(
-            onDismissRequest = { problems = null },
-            confirmButton = { TextButton(onClick = { problems = null }) { Text("OK") } },
-            title = { Text("Last refresh") },
-            text = { Text(it.joinToString("\n")) },
+            onDismissRequest = { explanation = null },
+            confirmButton = { TextButton(onClick = { explanation = null }) { Text("OK") } },
+            title = { Text(title) },
+            text = { Text(lines.joinToString("\n\n")) },
         )
     }
 }

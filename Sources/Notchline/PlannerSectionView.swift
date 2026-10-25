@@ -12,8 +12,6 @@ struct PlannerSectionView: View {
     @State private var selectedIndex = 0
     @State private var showsScoreHelp = false
 
-    private var timeZone: TimeZone { model.location.calendar.timeZone }
-
     var body: some View {
         if planner.locationID == model.location.id || planner.isPlanning {
             VStack(alignment: .leading, spacing: 8) {
@@ -29,9 +27,13 @@ struct PlannerSectionView: View {
         }
     }
 
-    private var days: [PlannedDay] { planner.plan?.days ?? [] }
+    private var summary: PlannerSummary? {
+        planner.plan.map { PlannerSummary(plan: $0, location: model.location, now: now) }
+    }
 
-    private var selectedDay: PlannedDay? {
+    private var days: [PlannerDaySummary] { summary?.days ?? [] }
+
+    private var selectedDay: PlannerDaySummary? {
         days.isEmpty ? nil : days[min(selectedIndex, days.count - 1)]
     }
 
@@ -60,7 +62,7 @@ struct PlannerSectionView: View {
             }
             ForEach(days.indices, id: \.self) { index in
                 DayButton(
-                    title: PlannerFormat.dayName(days[index].score.day, now: now, calendar: model.location.calendar),
+                    title: days[index].title,
                     isSelected: index == min(selectedIndex, days.count - 1)
                 ) { selectedIndex = index }
             }
@@ -72,43 +74,37 @@ struct PlannerSectionView: View {
         if let day = selectedDay {
             dayView(day)
         } else if !planner.isPlanning {
-            Text("No hourly forecast to plan from.")
+            Text(PlannerSummary.noForecast)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
-    private func dayView(_ day: PlannedDay) -> some View {
-        let order: [Terrain] = day.score.best == .groomed ? [.groomed, .ungroomed] : [.ungroomed, .groomed]
-        let scored = order.filter { day.score.window($0) != nil }
-        if scored.isEmpty {
-            Text(noScoreReason(day.score))
+    private func dayView(_ day: PlannerDaySummary) -> some View {
+        if let reason = day.noScoreReason {
+            Text(reason)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 14) {
-                ForEach(scored, id: \.self) { terrain in
-                    ScoreLabel(score: day.score.window(terrain)!.averageScore, terrain: terrain, isHeadline: terrain == scored.first)
+                ForEach(day.scores, id: \.terrain) { score in
+                    ScoreLabel(score: score.score, terrain: score.terrain, isHeadline: score.isHeadline)
                 }
                 Spacer()
-                if let best = day.score.best, let confidence = day.score.confidence?.confidence(best) {
-                    Text("Confidence \(confidence.percent)%")
+                if let confidence = day.confidence {
+                    Text(confidence)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .help(confidenceHelp(confidence))
+                        .help(day.confidenceNotes.joined(separator: "\n"))
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                if scored.count == 2 && sameTrip(day) {
-                    terrainRow(day, scored[0], label: "Both")
-                } else {
-                    ForEach(scored, id: \.self) { terrain in
-                        terrainRow(day, terrain, label: terrain == .groomed ? "Groomed" : "Ungroomed")
-                    }
+                ForEach(day.rows, id: \.label) { row in
+                    terrainRow(row)
                 }
             }
-            if planner.plan?.needsHome == true {
+            if summary?.needsHome == true {
                 Button("Set home for departure times…") { actions.showSettings() }
                     .buttonStyle(.link)
                     .font(.caption)
@@ -116,43 +112,29 @@ struct PlannerSectionView: View {
         }
     }
 
-    /// Both terrains aim for the same window with the same departure, so one row says it.
-    private func sameTrip(_ day: PlannedDay) -> Bool {
-        day.score.groomed?.interval == day.score.ungroomed?.interval
-            && day.groomed?.drive.leaveAt == day.ungroomed?.drive.leaveAt
-            && day.groomed?.overnight?.leaveAt == day.ungroomed?.overnight?.leaveAt
-    }
-
-    private func terrainRow(_ day: PlannedDay, _ terrain: Terrain, label: String) -> some View {
-        let window = day.score.window(terrain)!
-        let departure = day.departure(terrain)
-        return VStack(alignment: .leading, spacing: 1) {
+    private func terrainRow(_ row: TerrainRowSummary) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
             HStack(alignment: .firstTextBaseline) {
-                Text(label)
+                Text(row.label)
                     .font(.caption.weight(.semibold))
                     .frame(width: 70, alignment: .leading)
-                Text(PlannerFormat.window(window.interval, timeZone: timeZone))
+                Text(row.window)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
-                if let departure {
-                    Text(PlannerFormat.advice(departure.advice(now: now), timeZone: timeZone))
+                if let advice = row.advice {
+                    Text(advice)
                         .font(.caption.weight(.semibold))
                 }
             }
-            if let departure {
-                Group {
-                    Text(PlannerFormat.drive(departure.drive))
-                    if let overnight = departure.overnight {
-                        Text(PlannerFormat.overnight(overnight, now: now, timeZone: timeZone))
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 70)
+            ForEach(row.details, id: \.self) { detail in
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 70)
             }
         }
-        .help(planner.plan?.warnings.joined(separator: "\n") ?? "")
+        .help(summary?.warnings.joined(separator: "\n") ?? "")
     }
 
     private func ratingPrompt(_ record: PlannerDayRecord) -> some View {
@@ -169,33 +151,6 @@ struct PlannerSectionView: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
     }
-
-    private func noScoreReason(_ score: DayScore) -> String {
-        if model.location.calendar.isDate(score.day, inSameDayAs: now) && now >= score.liftHours.end {
-            return "The lifts have closed for the day."
-        }
-        let vetoes = Set(score.hours.compactMap(\.veto))
-        guard !vetoes.isEmpty else { return "No skiable hours left today." }
-        let reasons = [Veto.rain, .wind, .visibility].filter(vetoes.contains).map { veto in
-            switch veto {
-            case .rain: "rain"
-            case .wind: "wind holds"
-            case .visibility: "no visibility"
-            }
-        }
-        return "No skiable hours: " + reasons.joined(separator: ", ") + "."
-    }
-
-    private func confidenceHelp(_ confidence: Confidence) -> String {
-        var lines = [confidence.isMeasured
-            ? "How often forecasts this far ahead held, measured from past seasons."
-            : "Estimated from how far ahead the day is."]
-        if let spread = confidence.modelSpread {
-            lines.append("Forecast models are within \(spread) points of each other.")
-        }
-        lines.append("Lift hours are typical, not this season's.")
-        return lines.joined(separator: "\n")
-    }
 }
 
 /// What the scores mean and what goes into them. Shown inline rather than in a popover, since
@@ -203,10 +158,7 @@ struct PlannerSectionView: View {
 private struct ScoreHelpView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Each score, 0 to 100, rates the day's best window for groomed or ungroomed runs: the stretch of lift hours within 15 points of the day's peak. The higher of the two leads.")
-            Text("Every lift hour is scored from fresh snow not yet tracked out, snow quality from temperature, a refrozen rain crust, wind and gusts, and flat light from cloud, fog or falling snow. Rain, gusts over the lift-hold threshold or near-zero visibility zero out the hour.")
-            Text("Groomed runs depend mostly on temperature, surface, wind and light, and top out at 85 so a perfect corduroy day still ranks under a deep powder day. Ungroomed runs depend mostly on fresh snow, which gets tracked out faster on weekends, holidays and big powder days.")
-            Text("Confidence is how likely the score is to hold by the day itself.")
+            ForEach(ScoreHelp.paragraphs, id: \.self) { Text($0) }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
