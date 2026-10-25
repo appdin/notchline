@@ -5,11 +5,14 @@ import NotchlineCore
 // Usage: notchline-fetch [location-id] [--json] [--home lat,lon]
 //        notchline-fetch [location-id] --score-history yyyy-MM-dd yyyy-MM-dd
 //        notchline-fetch --backtest-confidence [--out path] [--cache dir]
+//        notchline-fetch --learning [--archive dir]
 // --score-history scores every day in the range from Open-Meteo's archived forecasts and prints
 // one tab-separated line per day, for checking the planner against known storm days.
 // --home adds departure times from that point, with Apple Maps drive times and default settings.
 // --backtest-confidence measures how often scores held at each location with a station and writes
 // the confidence table, see scripts/backtest-confidence.sh. --cache keeps responses on disk.
+// --learning reports what the app's planner archive has taught it: weights fit to ratings and
+// drive buffers tuned from logged and reported drives, with default settings.
 
 let args = CommandLine.arguments.dropFirst()
 let wantsJSON = args.contains("--json")
@@ -108,6 +111,42 @@ if args.contains("--backtest-confidence") {
         log([cell.location ?? "all", cell.terrain.rawValue, "+\(cell.lead)", cell.agreement?.rawValue ?? "any", "\(cell.days)",
              "\(Int((100 * Double(cell.held) / Double(cell.days)).rounded()))%", String(format: "%.1f", cell.meanError)].joined(separator: "\t"))
     }
+    exit(0)
+}
+
+if args.contains("--learning") {
+    let archive = try value(after: "--archive").map { PlannerArchive(directory: URL(fileURLWithPath: $0)) } ?? PlannerArchive.applicationSupport()
+    let (records, warnings) = try archive.allRecords()
+    let settings = PlannerSettings.default
+    let learning = PlannerLearning.learn(records, settings: settings)
+    let rated = records.filter { $0.rating?.skied == true }.count
+    let samples = records.reduce(0) { $0 + $1.travelTimes.count }
+    print("\(archive.directory.path): \(records.count) days, \(rated) skied and rated, \(samples) logged drive times")
+    func weights(_ weights: ScoreWeights) -> String {
+        zip(ScoreWeights.factorNames, weights.factorWeights.map { $0 / weights.factorWeights.reduce(0, +) })
+            .map { "\($0) \(String(format: "%.2f", $1))" }.joined(separator: ", ")
+    }
+    for terrain in Terrain.allCases {
+        let fit = learning.fit(terrain)
+        print("\(terrain.rawValue): \(fit.ratedDays) rated days, scoring with \(fit.isLearned ? "learned" : "hand-tuned") weights")
+        print("  hand-tuned  \(weights(.handTuned(terrain)))")
+        if let candidate = fit.candidate, let learned = fit.learnedError, let handTuned = fit.handTunedError {
+            print("  learned     \(weights(candidate))")
+            print("  error predicting each day from the others: learned \(String(format: "%.2f", learned)), hand-tuned \(String(format: "%.2f", handTuned)) rating points")
+        } else {
+            print("  learned     needs \(WeightLearning.minimumRatedDays) rated days")
+        }
+    }
+    let tuned = learning.buffers
+    print("drives: \(tuned.observations.count) (\(tuned.observations.filter { $0.source == .reported }.count) reported, \(tuned.observations.filter { $0.source == .logged }.count) logged)")
+    for group in BufferTuning.groups(tuned.observations) {
+        print("  \(group.name): \(group.days) days, median \(Int((group.medianExcess / 60).rounded())) min over Apple's estimate")
+    }
+    let buffers = tuned.buffers
+    print("buffers\(tuned.tuned.isEmpty ? " (all defaults)" : ", tuned: " + tuned.tuned.joined(separator: ", "))")
+    print("  icy roads \(Int(buffers.freezing * 100))%, snow \(Int(buffers.snow * 100))%, heavy snow \(Int(buffers.heavySnow * 100))%, freezing rain \(Int(buffers.freezingRain * 100))%")
+    print("  crowds \(Int(buffers.crowd / 60)) min, weekend crowds \(Int(buffers.busyCrowd / 60)) min")
+    for warning in warnings { print("  ! \(warning)") }
     exit(0)
 }
 

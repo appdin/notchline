@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var model: ConditionsModel
+    @ObservedObject var plannerModel: PlannerModel
     @State private var homeAddress = ""
 
     var body: some View {
@@ -87,6 +88,9 @@ struct SettingsView: View {
                 Text("Press Return to look up home. It stays on this Mac and is sent only to Apple Maps. Lot to lift covers parking, gearing up and getting onto the first chair.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text("\(PlannerFormat.learning(plannerModel.learning)) Each morning the planner logs Apple Maps' drive time from home every 15 minutes while this Mac is awake.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -142,7 +146,7 @@ final class SettingsWindowController {
 
     func show(appState: AppState) {
         if window == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(appState: appState, model: appState.model)))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(appState: appState, model: appState.model, plannerModel: appState.plannerModel)))
             window.title = "Notchline Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false

@@ -73,8 +73,8 @@ public struct PlannerScores: Codable, Equatable, Sendable {
     public var warnings: [String]
 }
 
-/// Factor weights for one terrain. The five weights sum to 1. Hand tuned for now, against two
-/// Mt. Baker seasons; Phase 6 fits them to the user's ratings.
+/// Factor weights for one terrain. The five weights sum to 1. Hand tuned against two Mt. Baker
+/// seasons, then fit to the user's ratings once there are enough (`WeightLearning`).
 public struct ScoreWeights: Codable, Equatable, Sendable {
     public var freshSnow: Double
     public var snowQuality: Double
@@ -112,6 +112,18 @@ public struct ScoreWeights: Codable, Equatable, Sendable {
     }
 
     var total: Double { freshSnow + snowQuality + surface + wind + light }
+
+    /// Fresh snow, snow quality, surface, wind and light, in that order.
+    public var factorWeights: [Double] { [freshSnow, snowQuality, surface, wind, light] }
+
+    public static let factorNames = ["fresh snow", "snow quality", "surface", "wind", "light"]
+
+    /// These weights with the five factor weights replaced, in `factorWeights` order.
+    func replacingFactorWeights(_ factors: [Double]) -> ScoreWeights {
+        var weights = self
+        (weights.freshSnow, weights.snowQuality, weights.surface, weights.wind, weights.light) = (factors[0], factors[1], factors[2], factors[3], factors[4])
+        return weights
+    }
 }
 
 /// Fixed thresholds behind the scores. Each is a rule of thumb, to revisit with rated days.
@@ -285,12 +297,21 @@ public enum SkiDayScorer {
     // MARK: - Factors, each 0 to 1
 
     static func terrainScore(_ hour: ForecastHour, freshSnowInches: Double, icy: Bool, gustThresholdMph: Double, weights: ScoreWeights) -> Int {
-        let value = weights.freshSnow * freshSnowFactor(freshSnowInches)
-            + weights.snowQuality * snowQualityFactor(hour.tempF)
-            + weights.surface * (icy ? weights.icySurface : 1)
-            + weights.wind * windFactor(hour.wind, gustThresholdMph: gustThresholdMph)
-            + weights.light * lightFactor(hour, sensitivity: weights.flatLightSensitivity)
+        let values = factors(hour, freshSnowInches: freshSnowInches, icy: icy, gustThresholdMph: gustThresholdMph, weights: weights)
+        let value = zip(weights.factorWeights, values).reduce(0) { $0 + $1.0 * $1.1 }
         return Int((weights.ceiling * value / weights.total).rounded())
+    }
+
+    /// The five factors in `ScoreWeights.factorWeights` order. `weights` supplies only the icy
+    /// surface value and flat light sensitivity, which learning leaves as they are.
+    static func factors(_ hour: ForecastHour, freshSnowInches: Double, icy: Bool, gustThresholdMph: Double, weights: ScoreWeights) -> [Double] {
+        [
+            freshSnowFactor(freshSnowInches),
+            snowQualityFactor(hour.tempF),
+            icy ? weights.icySurface : 1,
+            windFactor(hour.wind, gustThresholdMph: gustThresholdMph),
+            lightFactor(hour, sensitivity: weights.flatLightSensitivity),
+        ]
     }
 
     /// Rises quickly, then levels off: 3" is 0.53, 6" is 0.78, 12" is 0.95.

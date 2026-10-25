@@ -20,6 +20,11 @@ actor StubTravel: TravelTimeProvider {
         return try rule(arrival)
     }
 
+    /// The same rule, on the departure time.
+    func travelTime(from origin: Coordinate, to destination: Coordinate, departingAt departure: Date) async throws -> TimeInterval {
+        try rule(departure)
+    }
+
     func routeMidpoint(from origin: Coordinate, to destination: Coordinate) async throws -> Coordinate {
         try midpointResult.get()
     }
@@ -213,8 +218,8 @@ struct DeparturePlannerTests {
             ForecastHour(start: date("2027-01-12T14:00:00Z"), tempF: 30),
         ])]
         #expect(DeparturePlanner.roadCondition(during: DateInterval(start: date("2027-01-12T14:00:00Z"), duration: 3600), samples: samples) == .freezing)
-        #expect(DeparturePlanner.roadBuffer(driveTime: 90 * 60, condition: .snow) == 30 * 60)
-        #expect(DeparturePlanner.roadBuffer(driveTime: 90 * 60, condition: .clear) == 0)
+        #expect(DriveBuffers.rule.roadBuffer(driveTime: 90 * 60, condition: .snow) == 30 * 60)
+        #expect(DriveBuffers.rule.roadBuffer(driveTime: 90 * 60, condition: .clear) == 0)
     }
 
     @Test func etasAreCachedPerArrival() async throws {

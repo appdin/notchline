@@ -55,6 +55,20 @@ public struct EarlierForecast: Codable, Equatable, Sendable {
     public var confidence: DayConfidence?
 }
 
+/// Apple Maps' live drive time from home, leaving at `at`, as the travel-time log recorded it.
+public struct TravelSample: Codable, Equatable, Sendable {
+    public var at: Date
+    /// Home when the sample was taken, so samples from an earlier home can be left out.
+    public var home: Coordinate
+    public var driveTime: TimeInterval
+
+    public init(at: Date, home: Coordinate, driveTime: TimeInterval) {
+        self.at = at
+        self.home = home
+        self.driveTime = driveTime
+    }
+}
+
 /// What the planner said about one day at one location, and how the user rated it.
 public struct PlannerDayRecord: Codable, Equatable, Sendable {
     public var locationID: String
@@ -64,13 +78,27 @@ public struct PlannerDayRecord: Codable, Equatable, Sendable {
     /// At most one per lead, 1 and 2.
     public var earlier: [EarlierForecast]
     public var rating: DayRating?
+    /// The morning's logged drive times, oldest first.
+    public var travelTimes: [TravelSample]
 
-    public init(locationID: String, day: Date, morning: MorningPlan? = nil, earlier: [EarlierForecast] = [], rating: DayRating? = nil) {
+    public init(locationID: String, day: Date, morning: MorningPlan? = nil, earlier: [EarlierForecast] = [], rating: DayRating? = nil, travelTimes: [TravelSample] = []) {
         self.locationID = locationID
         self.day = day
         self.morning = morning
         self.earlier = earlier
         self.rating = rating
+        self.travelTimes = travelTimes
+    }
+
+    /// Records from before the travel-time log have no samples.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        locationID = try container.decode(String.self, forKey: .locationID)
+        day = try container.decode(Date.self, forKey: .day)
+        morning = try container.decodeIfPresent(MorningPlan.self, forKey: .morning)
+        earlier = try container.decode([EarlierForecast].self, forKey: .earlier)
+        rating = try container.decodeIfPresent(DayRating.self, forKey: .rating)
+        travelTimes = try container.decodeIfPresent([TravelSample].self, forKey: .travelTimes) ?? []
     }
 
     /// The headline terrain's best-window score that morning, nil when every hour was vetoed.
@@ -158,6 +186,38 @@ public struct PlannerArchive: Sendable {
         var stored = try load(locationID: record.locationID, day: record.day, calendar: calendar) ?? record
         stored.rating = rating
         try save(stored, calendar: calendar)
+    }
+
+    /// Adds a logged drive time to the record for the sample's local day.
+    public func log(_ sample: TravelSample, location: Location) throws {
+        let calendar = location.calendar
+        let day = calendar.startOfDay(for: sample.at)
+        var record = try load(locationID: location.id, day: day, calendar: calendar) ?? PlannerDayRecord(locationID: location.id, day: day)
+        record.travelTimes.append(sample)
+        record.travelTimes.sort { $0.at < $1.at }
+        try save(record, calendar: calendar)
+    }
+
+    /// Every stored record at every location, for learning. A record that can't be read is left
+    /// out with a warning rather than stopping the rest.
+    public func allRecords() throws -> (records: [PlannerDayRecord], warnings: [String]) {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: directory.path) else { return ([], []) }
+        var records: [PlannerDayRecord] = []
+        var warnings: [String] = []
+        for folder in try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).sorted(by: { $0.path < $1.path }) {
+            var isDirectory: ObjCBool = false
+            guard manager.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            for file in try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil).sorted(by: { $0.path < $1.path })
+            where file.pathExtension == "json" {
+                do {
+                    records.append(try Self.decoder.decode(PlannerDayRecord.self, from: Data(contentsOf: file)))
+                } catch {
+                    warnings.append("Could not read \(folder.lastPathComponent)/\(file.lastPathComponent) (\(error))")
+                }
+            }
+        }
+        return (records, warnings)
     }
 
     private func fileURL(_ locationID: String, day: Date, calendar: Calendar) -> URL {

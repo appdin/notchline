@@ -80,6 +80,7 @@ final class AppState: ObservableObject {
     private let ratingWindow = RatingWindowController()
     private let notifier = PlannerNotifier()
     private var replanTask: Task<Void, Never>?
+    private var travelLogTask: Task<Void, Never>?
 
     private var schedule = RefreshSchedule()
     private let defaults: UserDefaults
@@ -273,6 +274,7 @@ final class AppState: ObservableObject {
     /// Plans the selected location from its snapshot and replaces the pending notifications.
     private func replan() async {
         let location = model.location
+        scheduleTravelLog()
         guard planner.isEnabled else {
             plannerModel.clear()
             await notifier.removeAll()
@@ -296,6 +298,33 @@ final class AppState: ObservableObject {
             logger.error("Could not read today's plan record: \(error, privacy: .public)")
         }
         await notifier.replace(with: PlannerNotifications.schedule(plan, today: today, location: location, settings: planner, now: now))
+    }
+
+    /// Wakes at the next quarter hour of the selected location's morning to log Apple's live drive
+    /// time. Rescheduled by every replan, so a location or settings change takes effect. Sleep
+    /// skips samples; the first wakeup after it samples if the morning is still on.
+    private func scheduleTravelLog() {
+        travelLogTask?.cancel()
+        guard planner.isEnabled, planner.home != nil else { return }
+        let location = model.location
+        guard let next = TravelLogRules.nextSample(after: Date(), location: location) else { return }
+        travelLogTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSinceNow)))
+            guard !Task.isCancelled else { return }
+            await self?.logTravelTime()
+        }
+    }
+
+    private func logTravelTime() async {
+        let location = model.location
+        do {
+            if let sample = try await plannerModel.logTravelTime(location: location, settings: planner) {
+                logger.info("\(location.id, privacy: .public) drive time now: \(Int(sample.driveTime / 60)) min")
+            }
+        } catch {
+            logger.notice("\(location.id, privacy: .public) travel-time log: \(error, privacy: .public)")
+        }
+        scheduleTravelLog()
     }
 
     /// Expands the notch for a few seconds when new snow passes the alert threshold.

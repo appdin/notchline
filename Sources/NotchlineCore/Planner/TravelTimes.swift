@@ -26,6 +26,9 @@ extension Location {
 public protocol TravelTimeProvider: Sendable {
     /// Drive time from `origin` that arrives at `destination` by `arrival`.
     func travelTime(from origin: Coordinate, to destination: Coordinate, arrivingBy arrival: Date) async throws -> TimeInterval
+    /// Drive time from `origin` leaving at `departure`. For leaving now, this is the live estimate
+    /// with current traffic, which the travel-time log records.
+    func travelTime(from origin: Coordinate, to destination: Coordinate, departingAt departure: Date) async throws -> TimeInterval
     /// A point halfway along the route by distance, usually well below a ski area, for road weather.
     func routeMidpoint(from origin: Coordinate, to destination: Coordinate) async throws -> Coordinate
 }
@@ -63,6 +66,11 @@ public struct CachedTravelTimes: TravelTimeProvider {
         return try await etas.value(for: key, now: now()) { try await inner.travelTime(from: origin, to: destination, arrivingBy: arrival) }
     }
 
+    /// Not cached: the log asks for a new time each sample.
+    public func travelTime(from origin: Coordinate, to destination: Coordinate, departingAt departure: Date) async throws -> TimeInterval {
+        try await inner.travelTime(from: origin, to: destination, departingAt: departure)
+    }
+
     public func routeMidpoint(from origin: Coordinate, to destination: Coordinate) async throws -> Coordinate {
         try await midpoints.value(for: "\(origin.key)|\(destination.key)", now: now()) { try await inner.routeMidpoint(from: origin, to: destination) }
     }
@@ -74,9 +82,19 @@ public struct MapKitTravelTimes: TravelTimeProvider {
     public init() {}
 
     public func travelTime(from origin: Coordinate, to destination: Coordinate, arrivingBy arrival: Date) async throws -> TimeInterval {
+        let request = Self.request(from: origin, to: destination)
+        request.arrivalDate = arrival
+        return try await eta(request)
+    }
+
+    public func travelTime(from origin: Coordinate, to destination: Coordinate, departingAt departure: Date) async throws -> TimeInterval {
+        let request = Self.request(from: origin, to: destination)
+        request.departureDate = departure
+        return try await eta(request)
+    }
+
+    private func eta(_ request: MKDirections.Request) async throws -> TimeInterval {
         try await withCheckedThrowingContinuation { continuation in
-            let request = Self.request(from: origin, to: destination)
-            request.arrivalDate = arrival
             MKDirections(request: request).calculateETA { response, error in
                 if let time = response?.expectedTravelTime {
                     continuation.resume(returning: time)

@@ -87,7 +87,7 @@ public struct SkiDayPlan: Codable, Equatable, Sendable {
     public var needsHome = false
 }
 
-/// Fixed rules for v1. Phase 6 tunes the buffers from logged drive times.
+/// Fixed rules for departures. The buffers are in `DriveBuffers`, which can be tuned.
 public enum DepartureRules {
     /// Departures this close are given as "leave in N min".
     static let soon: TimeInterval = 60 * 60
@@ -97,22 +97,63 @@ public enum DepartureRules {
     static let earlyMorningHour = 6
     /// Driving up the night before aims to reach the lot by this local hour.
     static let overnightArrivalHour = 21
-    /// Extra time on days the forecast draws a crowd, for traffic on the access road and the lot.
-    static let crowdBuffer: TimeInterval = 20 * 60
-    static let busyCrowdBuffer: TimeInterval = 30 * 60
     /// Snowfall rates, in inches an hour, that slow the roads.
     static let snowingInchesPerHour = 0.1
     static let heavySnowInchesPerHour = 1.0
     static let freezingF = 32.0
+}
 
-    /// Share of the drive time added for each road condition.
-    static func roadBufferShare(_ condition: RoadCondition) -> Double {
+/// Time added to Apple's drive estimate for road weather and crowds. The v1 rule until there are
+/// enough logged or reported drives to tune it (`BufferTuning`).
+public struct DriveBuffers: Codable, Equatable, Sendable {
+    /// Share of the drive time added for each road condition other than clear.
+    public var freezing: Double
+    public var snow: Double
+    public var heavySnow: Double
+    public var freezingRain: Double
+    /// Extra time on days the forecast draws a crowd, for traffic on the access road and the lot.
+    public var crowd: TimeInterval
+    /// The same on a weekend or holiday.
+    public var busyCrowd: TimeInterval
+
+    public static let rule = DriveBuffers(freezing: 0.1, snow: 0.3, heavySnow: 0.5, freezingRain: 0.5, crowd: 20 * 60, busyCrowd: 30 * 60)
+
+    public init(freezing: Double, snow: Double, heavySnow: Double, freezingRain: Double, crowd: TimeInterval, busyCrowd: TimeInterval) {
+        self.freezing = freezing
+        self.snow = snow
+        self.heavySnow = heavySnow
+        self.freezingRain = freezingRain
+        self.crowd = crowd
+        self.busyCrowd = busyCrowd
+    }
+
+    public func roadShare(_ condition: RoadCondition) -> Double {
         switch condition {
         case .clear: 0
-        case .freezing: 0.1
-        case .snow: 0.3
-        case .heavySnow, .freezingRain: 0.5
+        case .freezing: freezing
+        case .snow: snow
+        case .heavySnow: heavySnow
+        case .freezingRain: freezingRain
         }
+    }
+
+    mutating func setRoadShare(_ condition: RoadCondition, _ share: Double) {
+        switch condition {
+        case .clear: break
+        case .freezing: freezing = share
+        case .snow: snow = share
+        case .heavySnow: heavySnow = share
+        case .freezingRain: freezingRain = share
+        }
+    }
+
+    public func crowdBuffer(busy: Bool) -> TimeInterval {
+        busy ? busyCrowd : crowd
+    }
+
+    /// A share of the drive time for the condition, rounded up to 5 minutes.
+    func roadBuffer(driveTime: TimeInterval, condition: RoadCondition) -> TimeInterval {
+        (driveTime * roadShare(condition) / 300).rounded(.up) * 300
     }
 }
 
@@ -121,10 +162,12 @@ public enum DepartureRules {
 public struct DeparturePlanner: Sendable {
     private let travel: TravelTimeProvider
     private let roadWeather: RoadWeatherProvider?
+    private let buffers: DriveBuffers
 
-    public init(travel: TravelTimeProvider, roadWeather: RoadWeatherProvider?) {
+    public init(travel: TravelTimeProvider, roadWeather: RoadWeatherProvider?, buffers: DriveBuffers = .rule) {
         self.travel = travel
         self.roadWeather = roadWeather
+        self.buffers = buffers
     }
 
     public func plan(_ scores: PlannerScores, hourly: HourlyForecast, location: Location, settings: PlannerSettings, now: Date) async -> SkiDayPlan {
@@ -144,7 +187,7 @@ public struct DeparturePlanner: Sendable {
             }
         }
         let trip = Trip(
-            travel: travel, home: home.coordinate, destination: location.coordinate, samples: samples,
+            travel: travel, home: home.coordinate, destination: location.coordinate, samples: samples, buffers: buffers,
             arrivalToLift: TimeInterval(settings.settings(for: location.id).arrivalToLiftMinutes * 60),
             overnightParking: settings.settings(for: location.id).overnightParkingAllowed,
             calendar: location.calendar, now: now)
@@ -169,13 +212,14 @@ public struct DeparturePlanner: Sendable {
         let home: Coordinate
         let destination: Coordinate
         let samples: [HourlyForecast]
+        let buffers: DriveBuffers
         let arrivalToLift: TimeInterval
         let overnightParking: Bool
         let calendar: Calendar
         let now: Date
 
         func departure(for day: DayScore, terrain: Terrain) async throws -> Departure? {
-            let crowd = day.drawsCrowd ? (day.isBusy ? DepartureRules.busyCrowdBuffer : DepartureRules.crowdBuffer) : 0
+            let crowd = day.drawsCrowd ? buffers.crowdBuffer(busy: day.isBusy) : 0
             let ahead = day.hours.filter { $0.interval.end > now }
             guard var (window, drive) = try await shortestDrive(SkiDayScorer.bestWindows(ahead, terrain), crowd: crowd) else { return nil }
             var missed: Date?
@@ -213,7 +257,7 @@ public struct DeparturePlanner: Sendable {
         func leg(lotArrival: Date, crowd: TimeInterval) async throws -> DriveLeg {
             let driveTime = try await travel.travelTime(from: home, to: destination, arrivingBy: lotArrival)
             let condition = DeparturePlanner.roadCondition(during: DateInterval(start: lotArrival.addingTimeInterval(-driveTime), end: lotArrival), samples: samples)
-            let buffer = DeparturePlanner.roadBuffer(driveTime: driveTime, condition: condition)
+            let buffer = buffers.roadBuffer(driveTime: driveTime, condition: condition)
             return DriveLeg(
                 leaveAt: DeparturePlanner.roundedToFive(lotArrival.addingTimeInterval(-driveTime - buffer - crowd), .down),
                 lotArrival: lotArrival, driveTime: driveTime, roadCondition: condition, roadBuffer: buffer, crowdBuffer: crowd)
@@ -254,11 +298,6 @@ public struct DeparturePlanner: Sendable {
         return belowFreezing ? .freezing : .clear
     }
 
-    /// A share of the drive time for the condition, rounded up to 5 minutes.
-    static func roadBuffer(driveTime: TimeInterval, condition: RoadCondition) -> TimeInterval {
-        let buffer = driveTime * DepartureRules.roadBufferShare(condition)
-        return (buffer / 300).rounded(.up) * 300
-    }
 }
 
 public enum PlannerFormat {
