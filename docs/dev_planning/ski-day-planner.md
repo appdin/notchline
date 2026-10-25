@@ -80,7 +80,7 @@ How likely the forecast is to hold, as a percentage. It drops as the day gets fu
 | 3 | Departure: MapKit ETA, road and crowd buffers, departure time for each score and day, overnight option | Done 2026-10-25 |
 | 4 | Confidence: rule-based in the app, then measured from history by a backtest script | Done 2026-10-25 |
 | 5 | UI, notifications and ratings: planner section in the expanded notch, day picker, evening-before and leave-soon notifications, day ratings | Done 2026-10-25 |
-| 6 | Learning: travel-time logging, then weights learned from ratings once there are enough | Not started |
+| 6 | Learning: travel-time logging, then weights learned from ratings once there are enough | Won't do, for now (2026-10-25) |
 
 ### Phase 1 - settings and data
 
@@ -206,6 +206,8 @@ As built:
 - Every scored day is asked about, in season or not. The prompt is passive in the notch, and only days over the threshold get a notification. If the daily question proves noisy, limit it to days with a skiable window or to days the user looked at the plan.
 
 ### Phase 6 - learning
+
+Won't do, for now. A build exists on the `planner-phase-6-learning` branch, not merged. The travel-time log only samples while a Mac running Notchline is awake on ski mornings, so it records nothing on a laptop that goes along or sleeps at home. Phase 5 keeps storing ratings with each morning's forecast and scores, so weights and buffers can still be learned from them later if this is picked back up.
 
 - **Travel-time logging.** On mornings with the planner on, record the live MapKit ETA from home to the location every 15 minutes while the Mac is awake, alongside that day's score and the forecast from one and two days earlier. This tests the crowd hypothesis anywhere, without traffic counters.
 - **Learned weights.** Once a user has enough rated days (start at about 20), fit the factor weights for the groomed and ungroomed scores to that user's ratings on the Mac, with a linear or logistic model in Swift. Fall back to the hand-tuned weights until there's enough data.
