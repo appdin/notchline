@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Foundation
 import Testing
 @testable import NotchlineCore
@@ -250,3 +251,4 @@ struct CurrentTempTests {
         #expect(snapshot.forecast?.windNow == nil)
     }
 }
+#endif

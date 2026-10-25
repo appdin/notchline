@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(MapKit)
 import MapKit
+#endif
 
 public struct Coordinate: Codable, Hashable, Sendable {
     public var latitude: Double
@@ -68,6 +70,7 @@ public struct CachedTravelTimes: TravelTimeProvider {
     }
 }
 
+#if canImport(MapKit)
 /// Apple Maps through MapKit: free, traffic aware, no key. Apple applies current road closures,
 /// so a closed access road gives no route rather than a wrong time.
 public struct MapKitTravelTimes: TravelTimeProvider {
@@ -129,3 +132,4 @@ public struct MapKitTravelTimes: TravelTimeProvider {
         return error.localizedFailureReason ?? error.localizedDescription
     }
 }
+#endif

@@ -20,8 +20,15 @@ public struct SkiDayPlanner: Sendable {
         self.tableWarning = tableWarning
     }
 
+    #if canImport(MapKit)
     /// Apple Maps drive times, Open-Meteo road weather and comparison models, and the bundled confidence table.
     public static func live(http: HTTPClient = RetryingHTTPClient(URLSessionHTTPClient())) -> SkiDayPlanner {
+        live(travel: MapKitTravelTimes(), http: http)
+    }
+    #endif
+
+    /// `travel` drive times, Open-Meteo road weather and comparison models, and the bundled confidence table.
+    public static func live(travel: TravelTimeProvider, http: HTTPClient = RetryingHTTPClient(URLSessionHTTPClient())) -> SkiDayPlanner {
         let openMeteo = OpenMeteoProvider(http: http)
         var table: ConfidenceTable?
         var tableWarning: String?
@@ -31,7 +38,7 @@ public struct SkiDayPlanner: Sendable {
             tableWarning = "No confidence table (\(error)); confidence uses the rule"
         }
         return SkiDayPlanner(
-            travel: CachedTravelTimes(MapKitTravelTimes()),
+            travel: CachedTravelTimes(travel),
             roadWeather: openMeteo.roadWeather,
             modelForecasts: { try await openMeteo.modelForecasts(for: $0, now: $1) },
             table: table, tableWarning: tableWarning)

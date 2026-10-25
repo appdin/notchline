@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import Foundation
 
@@ -83,3 +84,4 @@ public final class PlannerModel: ObservableObject {
         try refreshPendingRating(location: location, now: now)
     }
 }
+#endif

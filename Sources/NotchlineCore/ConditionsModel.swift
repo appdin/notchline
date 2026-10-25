@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import Foundation
 
@@ -80,3 +81,4 @@ public final class ConditionsModel: ObservableObject {
         isRefreshing = inFlight.contains(location.id)
     }
 }
+#endif

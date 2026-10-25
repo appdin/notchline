@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(MapKit)
 import MapKit
+#endif
 import Testing
 @testable import NotchlineCore
 
@@ -237,6 +239,7 @@ struct DeparturePlannerTests {
         #expect(SkiDayScorer.bestWindows(hours, .groomed).map(\.interval.start) == [start, start.addingTimeInterval(7200)])
     }
 
+    #if canImport(MapKit)
     @Test func routeMidpointIsHalfwayByDistance() {
         var points = [CLLocationCoordinate2D(latitude: 48.0, longitude: -122), CLLocationCoordinate2D(latitude: 48.1, longitude: -122),
                       CLLocationCoordinate2D(latitude: 48.4, longitude: -122)]
@@ -244,4 +247,5 @@ struct DeparturePlannerTests {
         #expect(abs(midpoint.latitude - 48.2) < 0.01)
         #expect(abs(midpoint.longitude + 122) < 0.0001)
     }
+    #endif
 }

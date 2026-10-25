@@ -125,6 +125,7 @@ struct PlannerAppTests {
 
     // MARK: Model
 
+    #if canImport(Combine)
     @Test func modelPlansRecordsAndRates() async throws {
         let model = PlannerModel(planner: planner(), archive: archive)
         let lastChair = try #require(location.liftInterval(on: date("2027-01-12T20:00:00Z"))).end
@@ -143,6 +144,7 @@ struct PlannerAppTests {
         model.clear()
         #expect(model.plan == nil && model.locationID == nil)
     }
+    #endif
 
     // MARK: Notifications
 

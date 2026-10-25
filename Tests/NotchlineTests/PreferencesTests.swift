@@ -58,6 +58,7 @@ struct SnowAlertTests {
     }
 }
 
+#if canImport(Combine)
 @MainActor
 struct ModelUnitsTests {
     @Test func unitsFollowTheSelectedLocationUntilOverridden() throws {
@@ -69,3 +70,4 @@ struct ModelUnitsTests {
         #expect(model.units == .imperial)
     }
 }
+#endif
