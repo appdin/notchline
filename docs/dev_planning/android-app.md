@@ -13,12 +13,13 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 - **Swift runtime linked statically into the app.** One `libNotchlineJNI.so` (56 MB stripped, mostly ICU data) plus `libc++_shared.so`, against about 100 MB for the shared runtime libraries. Only the device test runner links the runtime dynamically, because Swift Testing ships only as shared libraries.
 - **Platform code stays behind the core's existing seams.** The spike gated MapKit (`#if canImport(MapKit)`), Combine view models (`#if canImport(Combine)`) and added `FoundationNetworking` where `URLSession` lives on Android. `SkiDayPlanner.live(travel:)` takes any `TravelTimeProvider`.
 - **No drive times in the Android app. Google Maps does the drive.** The app doesn't estimate drive times or departures. Instead, each planned day has a button that opens Google Maps with driving directions to the resort already loaded (a Maps URL with `api=1`, `destination` set to the location's coordinate and `travelmode=driving`). Google Maps then gives the live ETA and handles navigation. Maps URLs can't set an arrive-by time, so the user checks the ETA in Maps against the lift time the app shows.
+- **Kotlin owns screen state; the core owns the rules behind it.** Decided in Phase 2. The Combine view models stay Mac only. What they did that Android needs moved into plain core types the Mac models now use too: `ConditionsCache` (the session's snapshots, cached versus refreshed, in-flight refreshes, saving to `SnapshotStore`) and `ConditionsSummary` (every display string, unit rule and stale, outdated and expiry rule of the conditions summary). Kotlin holds the selection and units and decides when to refresh. This keeps the macOS 13 minimum. Phase 3 should treat `PlannerModel` the same way.
+- **Snapshots live in the app's files directory.** Kotlin passes `filesDir/snapshots` to `configure`, which builds the `SnapshotStore` there, rather than relying on Foundation's Application Support mapping.
 - **No departures on Android at all.** The departure planner (departure times, route-midpoint road weather, crowd buffers, the overnight option) and departure reminders are left out rather than approximated. The scores, best windows and confidence are unchanged. The only planner notification is the evening-before summary.
 
 ## Open questions
 
-- **View models.** `ConditionsModel` and `PlannerModel` use Combine, which Android lacks. Either Kotlin owns the screen state and calls plain core functions, or the models move to Swift's `@Observable` (Observation ships in the Android SDK), which needs the Mac minimum raised from macOS 13 to 14.
-- **Storage paths.** `SnapshotStore` and `PlannerArchive` default to Application Support. On Android the app should pass its own `filesDir` rather than rely on Foundation's mapping.
+- **Planner archive path.** `PlannerArchive` defaults to Application Support. Phase 4 should pass a path under `filesDir`, as Phase 2 does for snapshots.
 - **Background refresh.** WorkManager periodic work has a 15 minute floor and Samsung's battery optimization delays or drops it. The evening-before summary may need an exact alarm (`SCHEDULE_EXACT_ALARM`) to arrive at its set time.
 
 ## Phases
@@ -27,7 +28,7 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 |---|---|---|
 | 0 | Spike: build `NotchlineCore` and its tests for Android and run them on an emulator | Done 2026-10-25 |
 | 1 | Build setup: core as an Android library, Gradle project, Swift to Kotlin bridge, CI build | Done 2026-10-25, CI workflow not yet run |
-| 2 | Conditions: location picker, current conditions and avalanche danger on an app screen | Not started |
+| 2 | Conditions: location picker, current conditions and avalanche danger on an app screen | Done 2026-10-25 |
 | 3 | Planner: scores, best windows and confidence, with a Google Maps directions button per day | Not started |
 | 4 | Background and notifications: periodic refresh, evening-before summaries, ratings | Not started |
 | 5 | Widget: home screen widget showing the headline score and lift time | Not started |
@@ -67,6 +68,14 @@ As built:
 - Location picker from the bundled `locations.json`.
 - Current conditions, forecast, and avalanche danger, in the same units rules as the Mac (`UnitPreference`, per-location defaults).
 - Snapshot cache through `SnapshotStore` in the app's files directory, with the Mac's stale and offline behavior.
+
+As built:
+
+- Core: `ConditionsCache` and `ConditionsSummary` (see Decisions locked). `ConditionsModel` and the Mac's `ConditionsSummaryView` now use them, so the Mac and Android show the same strings. `MetricState.problems` replaces the Mac's joined tooltip string, since the core doesn't split or join on line breaks. `DangerLevel.badgeText` moved into the core. Tests in `ConditionsSummaryTests.swift` cover both, and run on Android as well as the Mac.
+- Bridge: `configure(locationsJson, snapshotsDir)` returns the catalog by region. `conditions(locationId, units)` returns the cached `ConditionsSummary` without fetching. `refresh(locationId, units)` fetches and returns it. `units` is a `UnitPreference` raw value. Phase 1's raw snapshot JSON call is gone.
+- App: `ConditionsViewModel` keeps the selected location and units in shared preferences and refreshes on launch, on location change, on returning to the app after 30 minutes (the Mac's default interval) and when the network comes back. While visible it rereads the cached summary each minute so ages and outdated dimming stay current. `ConditionsScreen` has the location picker grouped by region, a units menu, the six metric cells, the avalanche line with the danger scale colors and an "Avalanche forecast" button, and pull to refresh. Tapping a value marked ⓘ shows the last refresh's errors and warnings, where the Mac shows a tooltip.
+- Checked on the API 36 emulator: live data for Mt. Baker (imperial) and Whistler (metric), the units override, and a relaunch in airplane mode showing the cached snapshot with failed metrics marked stale with their ages, then refreshing by itself when the network came back. Device tests: 176 passed.
+- `scripts/android.sh test` now builds only the test product. `--build-tests` also built a debug `NotchlineJNI`, which fails to link because the static TLS libraries aren't among the SDK's shared ones.
 
 ### Phase 3 - planner
 

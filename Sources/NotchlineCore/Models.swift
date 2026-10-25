@@ -310,6 +310,11 @@ public enum DangerLevel: Int, Codable, Comparable, Sendable {
         }
     }
 
+    /// `3`, or a dash for no rating.
+    public var badgeText: String {
+        self == .noRating ? "–" : "\(rawValue)"
+    }
+
     public static func < (lhs: DangerLevel, rhs: DangerLevel) -> Bool {
         lhs.rawValue < rhs.rawValue
     }

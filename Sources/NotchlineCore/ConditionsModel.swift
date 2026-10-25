@@ -21,18 +21,18 @@ public final class ConditionsModel: ObservableObject {
 
     public var units: UnitSystem { unitPreference.resolve(for: location) }
 
+    /// The selected location's conditions as one value, for `ConditionsSummary`.
+    public var conditions: LocationConditions {
+        LocationConditions(snapshot: snapshot, errors: errors, warnings: warnings, isShowingCached: isShowingCached, isRefreshing: isRefreshing)
+    }
+
     private let service: ConditionsService
-    private let store: SnapshotStore?
-    private var snapshots: [String: ConditionsSnapshot] = [:]
-    private var errorsByLocation: [String: [Metric: String]] = [:]
-    private var warningsByLocation: [String: [Metric: [String]]] = [:]
-    private var refreshed: Set<String> = []
-    private var inFlight: Set<String> = []
+    private var cache: ConditionsCache
 
     public init(catalog: LocationCatalog, selectedID: String?, service: ConditionsService = ConditionsService(), store: SnapshotStore? = nil) {
         self.catalog = catalog
         self.service = service
-        self.store = store
+        cache = ConditionsCache(store: store)
         location = catalog.resolve(id: selectedID)
         showSelected()
     }
@@ -49,36 +49,24 @@ public final class ConditionsModel: ObservableObject {
     @discardableResult
     public func refresh(now: Date = Date()) async -> ConditionsResult? {
         let location = location
-        guard !inFlight.contains(location.id) else { return nil }
-        inFlight.insert(location.id)
+        guard cache.beginRefresh(location.id) else { return nil }
         isRefreshing = true
 
-        let result = await service.refresh(location, previous: cached(location.id), now: now)
-        inFlight.remove(location.id)
-        snapshots[location.id] = result.snapshot
-        errorsByLocation[location.id] = result.errors
-        warningsByLocation[location.id] = result.warnings
-        refreshed.insert(location.id)
-        try? store?.save(result.snapshot)
+        let result = await service.refresh(location, previous: cache.snapshot(for: location.id), now: now)
+        cache.finishRefresh(result)
         if location.id == self.location.id {
             showSelected()
         }
         return result
     }
 
-    private func cached(_ id: String) -> ConditionsSnapshot? {
-        if let snapshot = snapshots[id] { return snapshot }
-        let loaded = store?.load(locationID: id)
-        snapshots[id] = loaded
-        return loaded
-    }
-
     private func showSelected() {
-        snapshot = cached(location.id)
-        errors = errorsByLocation[location.id] ?? [:]
-        warnings = warningsByLocation[location.id] ?? [:]
-        isShowingCached = snapshot != nil && !refreshed.contains(location.id)
-        isRefreshing = inFlight.contains(location.id)
+        let conditions = cache.conditions(for: location.id)
+        snapshot = conditions.snapshot
+        errors = conditions.errors
+        warnings = conditions.warnings
+        isShowingCached = conditions.isShowingCached
+        isRefreshing = conditions.isRefreshing
     }
 }
 #endif

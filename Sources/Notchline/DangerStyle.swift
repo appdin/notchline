@@ -21,11 +21,6 @@ extension DangerLevel {
         case .noRating, .high, .extreme: .white
         }
     }
-
-    /// `3`, or a dash for no rating.
-    var badgeText: String {
-        self == .noRating ? "–" : "\(rawValue)"
-    }
 }
 
 struct DangerBadge: View {

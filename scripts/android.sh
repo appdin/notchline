@@ -40,8 +40,9 @@ core)
     ;;
 test)
     # Swift Testing ships in the SDK only as shared libraries, so the tests link the runtime
-    # dynamically and every runtime library is pushed beside the runner.
-    swift_build --build-tests
+    # dynamically and every runtime library is pushed beside the runner. Only the test product is
+    # built: a debug NotchlineJNI would look for the static TLS libraries among the shared ones.
+    swift_build --product NotchlineAndroidPackageTests
     bin=android/swift/.build/debug
     sdks="$HOME/Library/org.swift.swiftpm/swift-sdks"
     [ -d "$sdks" ] || sdks="$HOME/.swiftpm/swift-sdks"

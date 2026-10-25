@@ -169,7 +169,7 @@ struct ProviderWarningsTests {
     @Test(.enabled(if: RepoSources.available, "needs the repo's sources on disk"))
     func noSilentlyDroppedErrors() throws {
         // The snapshot cache is best effort by design: an unreadable file just means no cache.
-        let files = try RepoSources.swiftFiles(in: "NotchlineCore", excluding: ["SnapshotStore.swift", "ConditionsModel.swift"])
+        let files = try RepoSources.swiftFiles(in: "NotchlineCore", excluding: ["SnapshotStore.swift", "ConditionsCache.swift"])
         #expect(!files.isEmpty)
         for file in files where try String(contentsOf: file, encoding: .utf8).contains("try?") {
             Issue.record("\(file.lastPathComponent) uses try?; record a ProviderWarnings message or throw")
