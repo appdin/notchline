@@ -21,6 +21,30 @@ android {
         ndk { abiFilters += "arm64-v8a" }
     }
 
+    // The release keystore stays out of the repo. Without these variables the release APK is left
+    // unsigned, and `scripts/android.sh release` refuses to build it.
+    val keystore = System.getenv("NOTCHLINE_KEYSTORE")
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("NOTCHLINE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("NOTCHLINE_KEY_ALIAS")
+                keyPassword = System.getenv("NOTCHLINE_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
+    // Compressed native libraries take the APK from 82 to about 47 MB, mostly ICU data in the core,
+    // at the cost of Android extracting them on install.
+    packaging { jniLibs.useLegacyPackaging = true }
+
     buildFeatures { compose = true }
 
     sourceSets["main"].jniLibs.directories += jniLibsDir.get().asFile.path

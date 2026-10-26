@@ -4,3 +4,5 @@ build/
 *.xcodeproj
 .DS_Store
 .claude/
+CLAUDE.md
+CLAUDE.local.md

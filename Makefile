@@ -14,7 +14,7 @@ BIN_DIR = $(shell swift build -c release $(SWIFT_FLAGS) --show-bin-path)
 # A secure timestamp needs a real identity; ad hoc signatures go without.
 CODESIGN_FLAGS = --force --options runtime $(if $(filter -,$(SIGN_IDENTITY)),,--timestamp)
 
-.PHONY: all build test app release run fetch android android-test clean
+.PHONY: all build test app release run fetch android android-test android-release clean
 
 all: app
 
@@ -65,12 +65,16 @@ LOCATION ?= mt-baker
 fetch:
 	swift run notchline-fetch $(LOCATION)
 
-# Android debug APK, and the core's tests on a connected device or emulator. See scripts/android.sh.
+# Android debug APK, the core's tests on a connected device or emulator, and the signed release
+# APK for GitHub Releases, which needs the NOTCHLINE_KEYSTORE variables. See scripts/android.sh.
 android:
 	scripts/android.sh apk
 
 android-test:
 	scripts/android.sh test
+
+android-release:
+	scripts/android.sh release
 
 clean:
 	rm -rf $(BUILD_DIR) .build

@@ -19,6 +19,8 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 - **Nothing asks for ratings, on Android or the Mac.** Decided in Phase 4. Whether someone skied doesn't follow from the score or from checking the conditions, so the "Did you ski?" question after every planned day and the rating notification after days over the threshold would nag. Both are gone from the core and both apps. The user rates one of the last seven days when they choose to.
 - **No departures on Android at all.** The departure planner (departure times, route-midpoint road weather, crowd buffers, the overnight option) and departure reminders are left out rather than approximated. The scores, best windows and confidence are unchanged. The only planner notification is the evening-before summary.
 - **Nothing assumes the user is going or went.** Decided after Phase 5, on both platforms. A score, a recommendation or the user looking at either says nothing about whether they will ski, and the app only knows they skied when they rate a day. So the Mac's departure reminders ("Leave for Mt. Baker in 30 min", with a sound, before every day over the threshold) and their "Remind me before leaving" setting are gone, and the evening summary is the only planner notification anywhere. Departure advice reads as a recommendation for the window beside it: "Leave at 7:00 AM", or once the window's start is out of reach "First chair has passed, leave now for the rest" in place of "Go anyway". Without a departure, summaries and the widget say "Be on the lift by 8:30 AM" rather than "On the lift by", which read as the user's itinerary. The Mac's rating window no longer starts its left-home and on-lift times from the planner's departure, since a time saved unchanged would record the recommendation as what the user did. The archive's morning record is the forecast before the lifts opened, not what the user saw. User-facing text says scores rather than plans: "Snow condition scores" for the Mac's Settings toggle, "Scoring…", "No hourly forecast to score.", "Could not save the forecast scores for ratings", an "Evening summaries" channel on Android, and "Updated 1:09 PM" on the widget. The rating window's footer no longer claims ratings "teach the planner what you like", which nothing does yet.
+- **Sideloaded from GitHub Releases, no Play Store listing.** Decided in Phase 6. A listing needs a developer account, a privacy policy and a yearly target API raise to stay listed, which isn't worth it for now. The signed APK is attached to a GitHub release by hand, as the Mac zip is. Revisit if sideloading turns out to be a barrier.
+- **The release keystore stays outside the repo.** Decided in Phase 6. The repo is public, so the keystore and its passwords come from environment variables, and CI keeps building only the debug APK.
 
 ## Open questions
 
@@ -34,7 +36,7 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 | 3 | Planner: scores, best windows and confidence, with a Google Maps directions button per day | Done 2026-10-25, Google Maps not yet tried on a device |
 | 4 | Background and notifications: periodic refresh, evening-before summaries, ratings | Done 2026-10-25, not yet checked on a Samsung phone |
 | 5 | Widget: home screen widget showing the headline score and lift time | Done 2026-10-25, background redraw not run on its own |
-| 6 | Release: signing, sideloadable APK, optional Play Store listing | Not started |
+| 6 | Release: signing, sideloadable APK, optional Play Store listing | Done 2026-10-25, signed with a test key only |
 
 ### Phase 0 - spike
 
@@ -128,3 +130,11 @@ As built:
 
 - Release signing and a sideloadable APK built by the same script as Phase 1.
 - Decide whether a Play Store listing is worth it. It needs a developer account, a privacy policy and target API upkeep.
+
+As built:
+
+- Gradle: a release signing config from `NOTCHLINE_KEYSTORE` (an absolute path), `NOTCHLINE_KEYSTORE_PASSWORD`, `NOTCHLINE_KEY_ALIAS` and `NOTCHLINE_KEY_PASSWORD`. Without them the release APK is left unsigned. No R8 minification: the APK is almost all native code, and the JNI entry points would need keep rules.
+- Native libraries are stored compressed (`useLegacyPackaging`). The release APK went from 82 MB to 48 MB, mostly ICU data in the core, and Android extracts the libraries on install, so the installed size is about 104 MB.
+- `scripts/android.sh keystore` creates the keystore with `keytool` (RSA 4096, 10,000 days) and refuses to overwrite one. `scripts/android.sh release`, also `make android-release`, checks the variables, assembles the release APK, copies it to `build/Notchline-<versionName>.apk`, verifies it with `apksigner` and prints its path and SHA-256, like `make release` does for the Mac zip. Attaching it to a GitHub release is by hand.
+- Every update must be signed with the same key, so the keystore needs a backup. Losing it means users uninstall, which loses their ratings, and install again.
+- Checked on the API 36 emulator with a throwaway keystore: the APK verified with an APK Signature Scheme v2 signature, installed in place of the debug build (which needed an uninstall, since the keys differ), loaded the core and showed live Mt. Baker conditions and scores. The debug APK still builds. Not yet built with the real release key or installed on a phone from a download.
