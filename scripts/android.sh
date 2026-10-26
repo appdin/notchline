@@ -8,13 +8,15 @@
 #   scripts/android.sh test                build the core's tests and run them on the connected
 #                                          device or emulator
 #   scripts/android.sh apk                 assemble the debug APK (runs `core` through Gradle)
-#   scripts/android.sh keystore            create the release keystore at $NOTCHLINE_KEYSTORE
+#   scripts/android.sh keystore            create the release keystore
 #   scripts/android.sh release             assemble the signed release APK as
 #                                          build/Notchline-<version>.apk and print its SHA-256
 #
-# The release keystore lives outside the repo. `keystore` and `release` read its path from
-# NOTCHLINE_KEYSTORE and its alias from NOTCHLINE_KEY_ALIAS; `release` also needs
-# NOTCHLINE_KEYSTORE_PASSWORD and NOTCHLINE_KEY_PASSWORD.
+# The release keystore lives outside the repo, at NOTCHLINE_KEYSTORE (default
+# ~/Documents/android_keys/notchline.keystore) under the alias NOTCHLINE_KEY_ALIAS (default
+# notchline). `release` reads the password from NOTCHLINE_KEYSTORE_PASSWORD, or else from the
+# Keychain item stored with `security add-generic-password -a notchline -s notchline-keystore -w`.
+# The key password NOTCHLINE_KEY_PASSWORD defaults to the keystore password.
 #
 # Needs swiftly with the toolchain in android/swift/.swift-version, the matching Swift SDK for
 # Android, and NDK r30. ANDROID_HOME defaults to ~/Library/Android/sdk and ANDROID_NDK_HOME to
@@ -34,6 +36,8 @@ export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$ndk_version}"
 swiftly="${SWIFTLY:-$HOME/.swiftly/bin/swiftly}"
 adb="$ANDROID_HOME/platform-tools/adb"
 build_tools="$ANDROID_HOME/build-tools/36.0.0"
+keystore="${NOTCHLINE_KEYSTORE:-$HOME/Documents/android_keys/notchline.keystore}"
+key_alias="${NOTCHLINE_KEY_ALIAS:-notchline}"
 libcxx="$(ls "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so)"
 
 swift_build() {
@@ -66,19 +70,27 @@ apk)
     echo "$root/android/app/build/outputs/apk/debug/app-debug.apk"
     ;;
 keystore)
-    keystore="${NOTCHLINE_KEYSTORE:?set NOTCHLINE_KEYSTORE to the keystore path, outside the repo}"
-    alias="${NOTCHLINE_KEY_ALIAS:?set NOTCHLINE_KEY_ALIAS}"
     [ ! -e "$keystore" ] || { echo "$keystore already exists" >&2; exit 1; }
+    mkdir -p "$(dirname "$keystore")"
     # Every update has to be signed with this key, so back it up. A lost key means users
     # uninstall and reinstall to update.
-    keytool -genkeypair -keystore "$keystore" -alias "$alias" -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=appdin"
+    keytool -genkeypair -keystore "$keystore" -alias "$key_alias" -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=appdin"
     ;;
 release)
-    for var in NOTCHLINE_KEYSTORE NOTCHLINE_KEYSTORE_PASSWORD NOTCHLINE_KEY_ALIAS NOTCHLINE_KEY_PASSWORD; do
-        eval "[ -n \"\${$var:-}\" ]" || { echo "$var is not set. See the top of $0." >&2; exit 1; }
-    done
-    case "$NOTCHLINE_KEYSTORE" in /*) ;; *) echo "NOTCHLINE_KEYSTORE must be an absolute path." >&2; exit 1 ;; esac
-    [ -f "$NOTCHLINE_KEYSTORE" ] || { echo "No keystore at $NOTCHLINE_KEYSTORE. Run $0 keystore." >&2; exit 1; }
+    case "$keystore" in /*) ;; *) echo "NOTCHLINE_KEYSTORE must be an absolute path." >&2; exit 1 ;; esac
+    [ -f "$keystore" ] || { echo "No keystore at $keystore. Run $0 keystore." >&2; exit 1; }
+    export NOTCHLINE_KEYSTORE="$keystore" NOTCHLINE_KEY_ALIAS="$key_alias"
+    # The passwords only live in this process's environment, never in a file or the shell history.
+    if [ -z "${NOTCHLINE_KEYSTORE_PASSWORD:-}" ]; then
+        NOTCHLINE_KEYSTORE_PASSWORD="$(security find-generic-password -a notchline -s notchline-keystore -w)" || {
+            echo "No keystore password in the Keychain. Add it with" >&2
+            echo "  security add-generic-password -a notchline -s notchline-keystore -w" >&2
+            exit 1
+        }
+    fi
+    # keytool's PKCS12 keystores use one password for the store and the key.
+    export NOTCHLINE_KEYSTORE_PASSWORD
+    export NOTCHLINE_KEY_PASSWORD="${NOTCHLINE_KEY_PASSWORD:-$NOTCHLINE_KEYSTORE_PASSWORD}"
     (cd android && ./gradlew assembleRelease)
     version="$(sed -n 's/.*versionName = "\(.*\)"/\1/p' android/app/build.gradle.kts)"
     apk="$root/build/Notchline-$version.apk"
@@ -89,7 +101,7 @@ release)
     shasum -a 256 "$apk"
     ;;
 *)
-    sed -n '2,21p' "$0"
+    sed -n '2,23p' "$0"
     exit 2
     ;;
 esac
