@@ -165,7 +165,7 @@ The Android app uses the same `NotchlineCore`, compiled with the [Swift SDK for 
 - The Swift runtime is linked statically into `libNotchlineJNI.so`. Only the device test runner links it dynamically, because Swift Testing ships only as shared libraries.
 - The app is arm64-v8a only and has no drive times or departures. Google Maps handles the drive.
 - Building needs [swiftly](https://www.swift.org/swiftly/) with the toolchain in `android/swift/.swift-version`, the matching Swift SDK for Android, and NDK r30. [`scripts/android.sh`](scripts/android.sh) lists the commands and the environment variables they read.
-- The [Android workflow](.github/workflows/android.yml) builds the debug APK on pushes that touch the core or the app. The core's tests need an arm64 device, so they run locally.
+- CI doesn't build the Android app. Build, test and sign it locally with the `make android` commands. The core's tests need an arm64 device or emulator.
 
 ### Releasing
 
