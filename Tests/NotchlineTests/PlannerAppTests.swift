@@ -136,7 +136,7 @@ struct PlannerAppTests {
 
     // MARK: Notifications
 
-    @Test func summariesTheEveningBeforeAndRemindersBeforeLeaving() async throws {
+    @Test func summariesTheEveningBeforeAndNoDepartureReminders() async throws {
         let now = date("2027-01-12T14:00:00Z")  // Tuesday 6:00 AM
         let result = try await plan(now: "2027-01-12T14:00:00Z")
         let notifications = PlannerNotifications.schedule(
@@ -150,12 +150,8 @@ struct PlannerAppTests {
         #expect(first.title == "Tomorrow at Mt. Baker Ski Area: 77 groomed, 35 ungroomed")
         #expect(first.body == "Leave at 7:00\u{202F}AM. Confidence 85%.")
 
-        let departures = notifications.filter { $0.kind == .departure }
-        // 30 minutes before each 7:00 AM departure, today's included.
-        #expect(departures.count == 4)
-        #expect(departures.first?.fireAt == date("2027-01-12T14:30:00Z"))
-        #expect(departures.first?.title == "Leave for Mt. Baker Ski Area in 30 min")
-        #expect(departures.first?.body == "77 groomed, 35 ungroomed. On the lift by 9:00\u{202F}AM, 90 min drive +10 min icy roads.")
+        // A good score doesn't mean the user is going, so nothing fires before a departure.
+        #expect(notifications.count == summaries.count)
         #expect(notifications.allSatisfy { $0.fireAt > now && $0.id.hasPrefix(PlannerNotifications.idPrefix) })
 
         // Below the threshold, or with the planner off, nothing.
@@ -171,16 +167,15 @@ struct PlannerAppTests {
         let summary = try #require(PlannerNotifications.schedule(
             result, location: location, settings: settings(home: false), now: now, userCalendar: pacific, locale: Locale(identifier: "en_US"))
             .first { $0.kind == .summary })
-        #expect(summary.body == "On the lift by 9:00\u{202F}AM. Confidence 85%.")
+        #expect(summary.body == "Be on the lift by 9:00\u{202F}AM. Confidence 85%.")
     }
 
     @Test func pastTimesAreLeftOut() async throws {
-        // 7:30 PM Tuesday: tonight's summary and today's reminder have passed.
+        // 7:30 PM Tuesday: tonight's summary has passed.
         let result = try await plan(now: "2027-01-13T03:30:00Z")
         let notifications = PlannerNotifications.schedule(
             result, location: location, settings: settings(), now: date("2027-01-13T03:30:00Z"), userCalendar: pacific)
         #expect(notifications.filter { $0.kind == .summary }.map(\.day) == [date("2027-01-14T08:00:00Z"), date("2027-01-15T08:00:00Z")])
-        #expect(notifications.first { $0.kind == .departure }?.day == date("2027-01-13T08:00:00Z"))
     }
 
     @Test func recentDaysIncludeUnplannedOnesNewestFirst() async throws {
@@ -200,7 +195,7 @@ struct PlannerAppTests {
         let now = date("2027-01-12T14:00:00Z")
         let result = try await plan(now: "2027-01-12T14:00:00Z")
         let notifications = PlannerNotifications.schedule(result, location: location, settings: settings(), now: now, userCalendar: pacific)
-        #expect(Set(notifications.map(\.kind)) == [.summary, .departure])
+        #expect(Set(notifications.map(\.kind)) == [.summary])
     }
 
     @Test func ratingPromptStrings() async throws {

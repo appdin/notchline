@@ -184,7 +184,7 @@ final class Bridge: @unchecked Sendable {
                 do {
                     try archive.record(result, hourly: hourly, location: location, now: now)
                 } catch {
-                    plan?.warnings.append("Could not save the plan for ratings (\(error))")
+                    plan?.warnings.append("Could not save the forecast scores for ratings (\(error))")
                 }
             }
         }

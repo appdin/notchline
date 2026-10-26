@@ -5,7 +5,9 @@ import SwiftUI
 /// Rates one of the location's recent days, when the user chooses to: a day picker, then
 /// groomed, ungroomed or both from 1 to 5, and optionally when the user left home and got on the
 /// lift. Nothing asks for ratings. A day already rated starts from its rating, and saving
-/// replaces it. Times are in the location's time zone.
+/// replaces it. Times are in the location's time zone. They never start from the planner's
+/// departure, since the user may not have followed it, and a time saved unchanged would record
+/// the recommendation as what they did.
 struct RatingView: View {
     /// Newest first, today included.
     let days: [PlannerDayRecord]
@@ -17,28 +19,31 @@ struct RatingView: View {
     var body: some View {
         let record = days[min(selectedIndex, days.count - 1)]
         let now = Date()
-        VStack(spacing: 0) {
-            Picker("Day", selection: $selectedIndex) {
-                ForEach(days.indices, id: \.self) { index in
-                    let prompt = RatingPrompt(days[index], location: location, now: now)
-                    Text(days[index].rating == nil ? prompt.dayLabel : "\(prompt.dayLabel) ✓").tag(index)
+        Form {
+            Section {
+                Picker("Day", selection: $selectedIndex) {
+                    ForEach(days.indices, id: \.self) { index in
+                        let prompt = RatingPrompt(days[index], location: location, now: now)
+                        Text(days[index].rating == nil ? prompt.dayLabel : "\(prompt.dayLabel) ✓").tag(index)
+                    }
                 }
+                .pickerStyle(.menu)
             }
-            .pickerStyle(.menu)
-            .padding([.horizontal, .top], 20)
-            // A new form per day, so each starts from that day's record.
-            DayRatingForm(record: record, location: location, prompt: RatingPrompt(record, location: location, now: now)) { rating in
+            // New sections per day, so each starts from that day's record.
+            DayRatingSections(record: record, location: location, prompt: RatingPrompt(record, location: location, now: now)) { rating in
                 onSave(record, rating)
             }
             .id(record.day)
         }
+        .formStyle(.grouped)
         .environment(\.timeZone, location.calendar.timeZone)
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-private struct DayRatingForm: View {
+/// The rating sections for one day, inside RatingView's form.
+private struct DayRatingSections: View {
     let record: PlannerDayRecord
     let location: Location
     let prompt: RatingPrompt
@@ -57,19 +62,17 @@ private struct DayRatingForm: View {
         self.prompt = prompt
         self.onSave = onSave
         let rating = record.rating
-        let plan = record.morning?.plan
-        let departure = plan?.score.best.flatMap { plan?.departure($0) }
-        let firstChair = plan?.score.liftHours.start ?? ClockTime(hour: 9, minute: 0)!.date(on: record.day, calendar: location.calendar)
+        let firstChair = record.morning?.plan.score.liftHours.start ?? ClockTime(hour: 9, minute: 0)!.date(on: record.day, calendar: location.calendar)
         _groomed = State(initialValue: rating?.groomed)
         _ungroomed = State(initialValue: rating?.ungroomed)
         _includeLeftHome = State(initialValue: rating?.leftHomeAt != nil)
-        _leftHomeAt = State(initialValue: rating?.leftHomeAt ?? departure?.drive.leaveAt ?? firstChair.addingTimeInterval(-2 * 3600))
+        _leftHomeAt = State(initialValue: rating?.leftHomeAt ?? firstChair.addingTimeInterval(-2 * 3600))
         _includeOnLift = State(initialValue: rating?.onLiftAt != nil)
-        _onLiftAt = State(initialValue: rating?.onLiftAt ?? departure?.liftTime ?? firstChair)
+        _onLiftAt = State(initialValue: rating?.onLiftAt ?? firstChair)
     }
 
     var body: some View {
-        Form {
+        Group {
             Section {
                 ratingPicker("Groomed", selection: $groomed)
                 ratingPicker("Ungroomed", selection: $ungroomed)
@@ -90,7 +93,7 @@ private struct DayRatingForm: View {
                     DatePicker("On the lift", selection: $onLiftAt, displayedComponents: .hourAndMinute)
                 }
             } footer: {
-                Text("Optional. Ratings stay on this Mac and teach the planner what you like.")
+                Text("Optional. Ratings stay on this Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -106,7 +109,6 @@ private struct DayRatingForm: View {
                 .disabled(groomed == nil && ungroomed == nil)
             }
         }
-        .formStyle(.grouped)
     }
 
     private func ratingPicker(_ title: String, selection: Binding<Int?>) -> some View {

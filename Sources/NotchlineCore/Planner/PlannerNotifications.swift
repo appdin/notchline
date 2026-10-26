@@ -6,8 +6,6 @@ public struct PlannerNotification: Equatable, Sendable {
     public enum Kind: String, Sendable {
         /// The evening before a day that crosses the score threshold.
         case summary
-        /// Ahead of the recommended departure.
-        case departure
     }
 
     /// Stable for a kind, location and day, so a later plan replaces it.
@@ -25,10 +23,11 @@ public enum PlannerNotifications {
     /// Every planner notification ID starts with this, so the app can remove only its own.
     public static let idPrefix = "planner."
 
-    /// The notifications for the selected location's plan. Summaries fire at the evening summary
-    /// time (in `userCalendar`, the Mac's or the phone's) the day before; departure reminders fire
-    /// the reminder lead before leaving. Only times still ahead of `now`. Nothing asks for
-    /// ratings: whether the user skied doesn't follow from the score, so they rate when they choose.
+    /// The notifications for the selected location's plan: a summary at the evening summary time
+    /// (in `userCalendar`, the Mac's or the phone's) the day before each day over the threshold,
+    /// only when still ahead of `now`. A good score doesn't mean the user is going, so nothing
+    /// reminds them to leave, and whether they skied doesn't follow from it either, so nothing
+    /// asks for ratings. They rate when they choose.
     public static func schedule(_ plan: SkiDayPlan, location: Location, settings: PlannerSettings,
                                 now: Date, userCalendar: Calendar = .current, locale: Locale = .current) -> [PlannerNotification] {
         guard settings.isEnabled else { return [] }
@@ -57,7 +56,7 @@ public enum PlannerNotifications {
                         lines.append(leave + ".")
                     } else {
                         // No home on the Mac, or Android, which leaves the drive to Google Maps.
-                        lines.append("On the lift by \(PlannerFormat.time(window.interval.start, timeZone: timeZone, locale: locale)).")
+                        lines.append("Be on the lift by \(PlannerFormat.time(window.interval.start, timeZone: timeZone, locale: locale)).")
                     }
                     if let confidence = day.score.confidence?.confidence(best) {
                         lines.append("Confidence \(confidence.percent)%.")
@@ -65,18 +64,6 @@ public enum PlannerNotifications {
                     notifications.append(PlannerNotification(
                         id: "\(idPrefix)summary.\(location.id).\(key)", kind: .summary, locationID: location.id, day: day.score.day,
                         fireAt: fireAt, title: "Tomorrow at \(location.name): \(headline)", body: lines.joined(separator: " ")))
-                }
-            }
-
-            if let departure = day.departure(best), departure.missedLiftTime == nil {
-                let lead = settings.departureReminderLeadMinutes
-                let fireAt = departure.drive.leaveAt.addingTimeInterval(-TimeInterval(lead * 60))
-                if fireAt > now {
-                    let lift = PlannerFormat.time(departure.liftTime, timeZone: timeZone, locale: locale)
-                    notifications.append(PlannerNotification(
-                        id: "\(idPrefix)departure.\(location.id).\(key)", kind: .departure, locationID: location.id, day: day.score.day,
-                        fireAt: fireAt, title: "Leave for \(location.name) in \(lead) min",
-                        body: "\(headline). On the lift by \(lift), \(PlannerFormat.drive(departure.drive))."))
                 }
             }
         }

@@ -119,15 +119,12 @@ public struct PlannerSettings: Codable, Equatable, Sendable {
     public var gustThresholdMph: Double
     /// When the evening-before summary notification fires.
     public var eveningSummaryTime: ClockTime
-    /// How long before the recommended departure the reminder fires.
-    public var departureReminderLeadMinutes: Int
     /// Days scoring at least this (0 to 100) get notifications.
     public var notificationScoreThreshold: Int
     /// Keyed by location ID. Locations without an entry use `LocationPlannerSettings.default`.
     public var locations: [String: LocationPlannerSettings]
 
     public static let gustThresholdOptionsMph: [Double] = [35, 40, 45, 50, 55, 60]
-    public static let departureReminderLeadOptions = [15, 30, 45, 60]
     public static let notificationScoreThresholdOptions = [60, 70, 80, 90]
 
     public static let `default` = PlannerSettings(
@@ -135,16 +132,14 @@ public struct PlannerSettings: Codable, Equatable, Sendable {
         home: nil,
         gustThresholdMph: 45,
         eveningSummaryTime: ClockTime(hour: 19, minute: 0)!,
-        departureReminderLeadMinutes: 30,
         notificationScoreThreshold: 80,
         locations: [:])
 
-    public init(isEnabled: Bool, home: Home?, gustThresholdMph: Double, eveningSummaryTime: ClockTime, departureReminderLeadMinutes: Int, notificationScoreThreshold: Int, locations: [String: LocationPlannerSettings]) {
+    public init(isEnabled: Bool, home: Home?, gustThresholdMph: Double, eveningSummaryTime: ClockTime, notificationScoreThreshold: Int, locations: [String: LocationPlannerSettings]) {
         self.isEnabled = isEnabled
         self.home = home
         self.gustThresholdMph = gustThresholdMph
         self.eveningSummaryTime = eveningSummaryTime
-        self.departureReminderLeadMinutes = departureReminderLeadMinutes
         self.notificationScoreThreshold = notificationScoreThreshold
         self.locations = locations
     }
@@ -156,7 +151,6 @@ public struct PlannerSettings: Codable, Equatable, Sendable {
         home = try container.decodeIfPresent(Home.self, forKey: .home)
         gustThresholdMph = try container.decodeIfPresent(Double.self, forKey: .gustThresholdMph) ?? defaults.gustThresholdMph
         eveningSummaryTime = try container.decodeIfPresent(ClockTime.self, forKey: .eveningSummaryTime) ?? defaults.eveningSummaryTime
-        departureReminderLeadMinutes = try container.decodeIfPresent(Int.self, forKey: .departureReminderLeadMinutes) ?? defaults.departureReminderLeadMinutes
         notificationScoreThreshold = try container.decodeIfPresent(Int.self, forKey: .notificationScoreThreshold) ?? defaults.notificationScoreThreshold
         locations = try container.decodeIfPresent([String: LocationPlannerSettings].self, forKey: .locations) ?? defaults.locations
     }

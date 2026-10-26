@@ -56,7 +56,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var plannerSection: some View {
         Section {
-            Toggle("Ski day planner", isOn: $appState.planner.isEnabled)
+            Toggle("Snow condition scores", isOn: $appState.planner.isEnabled)
             if appState.planner.isEnabled {
                 TextField("Home", text: $homeAddress, prompt: Text("Street address or town"))
                     .onSubmit { appState.setHome(address: homeAddress) }
@@ -78,9 +78,6 @@ struct SettingsView: View {
                     ForEach(PlannerSettings.notificationScoreThresholdOptions, id: \.self) { Text("\($0) or more").tag($0) }
                 }
                 DatePicker("Evening summary at", selection: eveningSummaryTime, displayedComponents: .hourAndMinute)
-                Picker("Remind me before leaving", selection: $appState.planner.departureReminderLeadMinutes) {
-                    ForEach(PlannerSettings.departureReminderLeadOptions, id: \.self) { Text("\($0) minutes").tag($0) }
-                }
             }
         } footer: {
             if appState.planner.isEnabled {

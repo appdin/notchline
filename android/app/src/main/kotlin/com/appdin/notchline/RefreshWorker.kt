@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Refreshes and replans the selected location in the background, then replaces the planner's
- * notifications, so summaries follow the forecast while the app is closed. Runs every 30 minutes,
+ * notifications and redraws the widget, so both follow the forecast while the app is closed. Runs every 30 minutes,
  * the Mac's default interval, when there is a network. Android may run it later than that,
  * especially with battery optimization on.
  */
@@ -28,6 +28,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             NotchlineCore.refresh(location.id, settings)
             val response = NotchlineCore.plan(location.id, settings)
             response.notifications?.let { PlannerAlarms.replace(applicationContext, it, location) }
+            ScoreWidget.show(applicationContext, location, response)
             Result.success()
         } catch (error: IllegalStateException) {
             Log.e(TAG, "Background refresh of ${location.id} failed: ${error.message}")

@@ -34,7 +34,6 @@ final class PlannerNotifier: NSObject {
             let content = UNMutableNotificationContent()
             content.title = notification.title
             content.body = notification.body
-            content.sound = notification.kind == .departure ? .default : nil
             content.userInfo = [
                 "kind": notification.kind.rawValue,
                 "locationID": notification.locationID,

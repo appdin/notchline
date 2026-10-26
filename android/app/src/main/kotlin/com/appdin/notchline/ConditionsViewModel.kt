@@ -49,7 +49,7 @@ data class ConditionsUiState(
  * rules; this holds the selection and settings, and decides when to refresh: on launch, on
  * location change, on returning to the app after the refresh interval, and when the network comes
  * back. Each refresh replans, as on the Mac, and a location shown from the cache is planned from
- * it. Each plan replaces the planner's notifications. `RefreshWorker` does the same in the
+ * it. Each plan replaces the planner's notifications and redraws the widget. `RefreshWorker` does the same in the
  * background.
  */
 class ConditionsViewModel(application: Application) : AndroidViewModel(application) {
@@ -222,9 +222,10 @@ class ConditionsViewModel(application: Application) : AndroidViewModel(applicati
         _state.update { if (it.location.id == location.id) it.copy(planning = true) else it }
         try {
             val response = NotchlineCore.plan(location.id, _state.value.settings)
-            // Only the selected location gets notifications, as on the Mac.
+            // Only the selected location gets notifications, as on the Mac, and the widget.
             if (location.id == prefs.selectedLocationId) {
                 response.notifications?.let { PlannerAlarms.replace(getApplication(), it, location) }
+                ScoreWidget.show(getApplication(), location, response)
             }
             _state.update { if (it.location.id == location.id) it.copy(planning = false) else it }
             reload()

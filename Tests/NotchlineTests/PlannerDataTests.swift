@@ -181,7 +181,6 @@ struct PlannerSettingsTests {
         #expect(settings.home == nil)
         #expect(settings.gustThresholdMph == 45)
         #expect(settings.eveningSummaryTime == ClockTime(hour: 19, minute: 0))
-        #expect(settings.departureReminderLeadMinutes == 30)
         #expect(settings.notificationScoreThreshold == 80)
         #expect(settings.settings(for: "mt-baker") == LocationPlannerSettings(arrivalToLiftMinutes: 20, overnightParkingAllowed: false))
     }

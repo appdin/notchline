@@ -110,7 +110,9 @@ public struct PlannerArchive: Sendable {
 
     /// Stores today's plan as the morning plan until first chair, and the scores of the next two
     /// days at their leads. A morning plan made after first chair is kept only when there is none,
-    /// so the record stays what the user saw before setting out.
+    /// so the record stays the forecast as it stood before the lifts opened. It records what the
+    /// planner forecast, not what the user saw or did: planning runs on a timer whether or not
+    /// anyone looks, and says nothing about whether the user went.
     public func record(_ plan: SkiDayPlan, hourly: HourlyForecast, location: Location, now: Date) throws {
         let calendar = location.calendar
         let today = calendar.startOfDay(for: now)

@@ -185,7 +185,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// A summary or departure reminder: show that location in the notch.
+    /// An evening summary: show that location in the notch.
     private func openNotification(locationID: String) {
         if locationID != model.location.id { select(locationID) }
         notch.showAlert()

@@ -39,7 +39,7 @@ public final class PlannerModel: ObservableObject {
             do {
                 try archive?.record(plan, hourly: hourly, location: location, now: now)
             } catch {
-                result?.warnings.append("Could not save the plan for ratings (\(error))")
+                result?.warnings.append("Could not save the forecast scores for ratings (\(error))")
             }
         }
         isPlanning = false

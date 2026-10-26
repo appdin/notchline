@@ -130,8 +130,8 @@ struct DeparturePlannerTests {
         // Now + 90 drive + 10 buffer + 20 lot to lift.
         #expect(departure.liftTime == date("2027-01-12T18:30:00Z"))
         #expect(departure.drive.leaveAt == now)
-        #expect(departure.advice(now: now) == .goAnyway(firstChairPassed: true))
-        #expect(PlannerFormat.advice(departure.advice(now: now), timeZone: pacific.timeZone) == "Go anyway, first chair has passed")
+        #expect(departure.advice(now: now) == .leaveNowForTheRest(firstChairPassed: true))
+        #expect(PlannerFormat.advice(departure.advice(now: now), timeZone: pacific.timeZone) == "First chair has passed, leave now for the rest")
 
         // After last chair there is nothing to leave for.
         let evening = try await plan(hourly(), now: "2027-01-12T23:00:00Z", travel: StubTravel { _ in 90 * 60 })
@@ -147,11 +147,11 @@ struct DeparturePlannerTests {
         #expect(departure.advice(now: leave.addingTimeInterval(-minutes(7))) == .leaveIn(minutes: 5))
         #expect(departure.advice(now: leave.addingTimeInterval(-minutes(3))) == .leaveNow)
         #expect(departure.advice(now: leave.addingTimeInterval(minutes(4))) == .leaveNow)
-        #expect(departure.advice(now: leave.addingTimeInterval(minutes(20))) == .goAnyway(firstChairPassed: true))
+        #expect(departure.advice(now: leave.addingTimeInterval(minutes(20))) == .leaveNowForTheRest(firstChairPassed: true))
         let us = Locale(identifier: "en_US")
         #expect(PlannerFormat.advice(.leaveAt(leave), timeZone: pacific.timeZone, locale: us) == "Leave at 7:00\u{202F}AM")
         #expect(PlannerFormat.advice(.leaveIn(minutes: 30), timeZone: pacific.timeZone) == "Leave in 30 min")
-        #expect(PlannerFormat.advice(.goAnyway(firstChairPassed: false), timeZone: pacific.timeZone) == "Go anyway, the best of it has started")
+        #expect(PlannerFormat.advice(.leaveNowForTheRest(firstChairPassed: false), timeZone: pacific.timeZone) == "The best window has started, leave now for the rest")
     }
 
     @Test func earlyDeparturesOfferDrivingUpTheNightBefore() async throws {

@@ -50,7 +50,7 @@ public struct Departure: Codable, Equatable, Sendable {
     public func advice(now: Date) -> DepartureAdvice {
         let wait = drive.leaveAt.timeIntervalSince(now)
         if missedLiftTime != nil || wait < -DepartureRules.leaveNowTolerance {
-            return .goAnyway(firstChairPassed: (missedLiftTime ?? liftTime) <= firstChair)
+            return .leaveNowForTheRest(firstChairPassed: (missedLiftTime ?? liftTime) <= firstChair)
         }
         if wait <= DepartureRules.leaveNowTolerance { return .leaveNow }
         if wait <= DepartureRules.soon {
@@ -65,8 +65,9 @@ public enum DepartureAdvice: Equatable, Sendable {
     case leaveAt(Date)
     case leaveIn(minutes: Int)
     case leaveNow
-    /// The planned departure has passed. `firstChairPassed` when the best window started at first chair.
-    case goAnyway(firstChairPassed: Bool)
+    /// The departure for the best window's start has passed, so this is for the rest of it.
+    /// `firstChairPassed` when the best window started at first chair.
+    case leaveNowForTheRest(firstChairPassed: Bool)
 }
 
 /// Each day's scores with the departure for each terrain.
@@ -262,13 +263,15 @@ public struct DeparturePlanner: Sendable {
 }
 
 public enum PlannerFormat {
-    /// "Leave at 7:00 AM", "Leave in 30 min", "Leave now", "Go anyway, first chair has passed"
+    /// "Leave at 7:00 AM", "Leave in 30 min", "Leave now", "First chair has passed, leave now for the rest".
+    /// Recommendations for the window beside them, not a claim that the user is going.
     public static func advice(_ advice: DepartureAdvice, timeZone: TimeZone, locale: Locale = .current) -> String {
         switch advice {
         case .leaveAt(let date): "Leave at \(time(date, timeZone: timeZone, locale: locale))"
         case .leaveIn(let minutes): "Leave in \(minutes) min"
         case .leaveNow: "Leave now"
-        case .goAnyway(let firstChairPassed): firstChairPassed ? "Go anyway, first chair has passed" : "Go anyway, the best of it has started"
+        case .leaveNowForTheRest(let firstChairPassed):
+            firstChairPassed ? "First chair has passed, leave now for the rest" : "The best window has started, leave now for the rest"
         }
     }
 

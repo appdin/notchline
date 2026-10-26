@@ -68,7 +68,7 @@ fun PlannerSection(state: ConditionsUiState, actions: ScreenActions, onExplain: 
                 Text(
                     "ⓘ",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { onExplain("Planner", warnings) }.padding(4.dp),
+                    modifier = Modifier.clickable { onExplain("Scores", warnings) }.padding(4.dp),
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -77,7 +77,7 @@ fun PlannerSection(state: ConditionsUiState, actions: ScreenActions, onExplain: 
         if (showsHelp) ScoreHelp(state.scoreHelp)
 
         if (days.isEmpty()) {
-            val message = state.plannerMessage ?: if (state.planning || !state.planned) "Planning…" else null
+            val message = state.plannerMessage ?: if (state.planning || !state.planned) "Scoring…" else null
             message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else {
             val index = selected.coerceIn(0, days.lastIndex)

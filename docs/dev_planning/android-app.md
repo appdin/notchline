@@ -18,6 +18,7 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 - **Alarms deliver notifications; WorkManager refreshes.** Android has no scheduled notifications, so each planner notification is an alarm, exact when the user allows alarms and inexact otherwise. A 30 minute WorkManager job refreshes and replans the selected location in the background and replaces the alarms. Decided in Phase 4.
 - **Nothing asks for ratings, on Android or the Mac.** Decided in Phase 4. Whether someone skied doesn't follow from the score or from checking the conditions, so the "Did you ski?" question after every planned day and the rating notification after days over the threshold would nag. Both are gone from the core and both apps. The user rates one of the last seven days when they choose to.
 - **No departures on Android at all.** The departure planner (departure times, route-midpoint road weather, crowd buffers, the overnight option) and departure reminders are left out rather than approximated. The scores, best windows and confidence are unchanged. The only planner notification is the evening-before summary.
+- **Nothing assumes the user is going or went.** Decided after Phase 5, on both platforms. A score, a recommendation or the user looking at either says nothing about whether they will ski, and the app only knows they skied when they rate a day. So the Mac's departure reminders ("Leave for Mt. Baker in 30 min", with a sound, before every day over the threshold) and their "Remind me before leaving" setting are gone, and the evening summary is the only planner notification anywhere. Departure advice reads as a recommendation for the window beside it: "Leave at 7:00 AM", or once the window's start is out of reach "First chair has passed, leave now for the rest" in place of "Go anyway". Without a departure, summaries and the widget say "Be on the lift by 8:30 AM" rather than "On the lift by", which read as the user's itinerary. The Mac's rating window no longer starts its left-home and on-lift times from the planner's departure, since a time saved unchanged would record the recommendation as what the user did. The archive's morning record is the forecast before the lifts opened, not what the user saw. User-facing text says scores rather than plans: "Snow condition scores" for the Mac's Settings toggle, "Scoring…", "No hourly forecast to score.", "Could not save the forecast scores for ratings", an "Evening summaries" channel on Android, and "Updated 1:09 PM" on the widget. The rating window's footer no longer claims ratings "teach the planner what you like", which nothing does yet.
 
 ## Open questions
 
@@ -32,7 +33,7 @@ Run Notchline on an Android phone: the same conditions, avalanche danger and ski
 | 2 | Conditions: location picker, current conditions and avalanche danger on an app screen | Done 2026-10-25 |
 | 3 | Planner: scores, best windows and confidence, with a Google Maps directions button per day | Done 2026-10-25, Google Maps not yet tried on a device |
 | 4 | Background and notifications: periodic refresh, evening-before summaries, ratings | Done 2026-10-25, not yet checked on a Samsung phone |
-| 5 | Widget: home screen widget showing the headline score and lift time | Not started |
+| 5 | Widget: home screen widget showing the headline score and lift time | Done 2026-10-25, background redraw not run on its own |
 | 6 | Release: signing, sideloadable APK, optional Play Store listing | Not started |
 
 ### Phase 0 - spike
@@ -114,6 +115,14 @@ As built:
 ### Phase 5 - widget
 
 - Glance widget for the selected location: headline score, the other terrain's score and the best window's lift time, updated after each background refresh. Tapping it opens the app; a directions action opens Google Maps.
+
+As built:
+
+- App: `ScoreWidget` is a Glance widget (`glance-appwidget` 1.2.0), 3 by 2 cells and resizable. It shows the location, the day, the headline score large with the other terrain's beside it, "Be on the lift by" the lift time and a Directions button that opens Google Maps or the browser. Tapping anywhere else opens the app. No core or bridge changes.
+- The widget can't call the core, so each planner run for the selected location stores what it shows in preferences and redraws it: `ConditionsViewModel.plan` and `RefreshWorker`, next to replacing the alarms. A Glance state key holding the update time makes a running widget reread what was stored. A widget added later reads what was last stored at once.
+- The day is today while it has a score, otherwise tomorrow, shown with its reason when it has no score ("No skiable hours: rain."), so the widget doesn't skip past a bad day. With no hourly forecast it gives the planner's message. Before the planner has run it says "Open Notchline to see scores."
+- Android redraws the widget hourly (`updatePeriodMillis`). Scores more than two hours old add "Updated 1:09 PM", or the date once they are from an earlier day, since Today and Tomorrow may no longer hold. The widget never says "plan" or "planned": the app doesn't know whether the user plans to ski.
+- Checked on the API 36 emulator: added from the launcher's widget picker, Whistler showed "Tomorrow, 58 groomed, 25 ungroomed, Be on the lift by 8:30 AM". Switching the app to Stevens Pass redrew it. Directions opened the browser fallback and tapping the widget opened the app. Scores backdated three hours showed the old-scores note, and the next planner run cleared it. WorkManager won't run a periodic job before its time, so the worker's redraw wasn't run on its own. It is the same call as the app's. After the change to nothing assuming the user is going: device tests 181 passed, Mac tests 202 passed.
 
 ### Phase 6 - release
 

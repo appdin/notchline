@@ -17,7 +17,7 @@ public struct PlannerSummary: Encodable, Equatable, Sendable {
     }
 
     /// Shown in place of the days when there is no plan.
-    public static let noForecast = "No hourly forecast to plan from."
+    public static let noForecast = "No hourly forecast to score."
 }
 
 public struct PlannerDaySummary: Encodable, Equatable, Sendable {

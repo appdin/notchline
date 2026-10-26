@@ -77,7 +77,7 @@ object PlannerAlarms {
         val notification = pending.notification
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Ski day planner", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            NotificationChannel(CHANNEL_ID, "Evening summaries", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "Evening-before summaries of good ski days"
             })
         val tap = Directions.intent(context, pending.latitude, pending.longitude).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
