@@ -13,6 +13,8 @@ Notchline is a small macOS menu bar app that shows mountain conditions in the Ma
 
 The compact view sits beside the notch with the base depth on one side and the temperature and avalanche danger on the other. Hover over it to expand the full conditions, with data age, sources and a link to the full avalanche forecast. On a Mac or display without a notch, the menu bar item shows the same information.
 
+There is also an [Android app](#android) with the same conditions and scores, a home screen widget and evening summaries.
+
 Notchline refreshes the selected location every 30 minutes, on wake and when the network returns. When a source is down it keeps showing the last good value, dimmed with its age.
 
 **Avalanche danger in Notchline is a summary only.** Always read the full forecast from the avalanche center before going into avalanche terrain.
@@ -103,6 +105,24 @@ Notchline runs as a menu bar app with no Dock icon. From the menu bar item you c
 
 **About** credits the data sources, with links.
 
+## Android
+
+The Android app shows the same conditions, avalanche danger and snow condition scores as the Mac, on an app screen, a home screen widget and in notifications. It needs Android 9 or later on an arm64 phone.
+
+### Installing on Android
+
+Notchline isn't on the Play Store. Download `Notchline-<version>.apk` from [Releases](https://github.com/appdin/notchline/releases) on the phone and open it. Android asks you to allow installs from your browser or file manager the first time.
+
+### Using the Android app
+
+- **App screen**: pick a location, pull to refresh, and open the avalanche forecast. Values marked ⓘ have errors or warnings from the last refresh. Tap one to see them.
+- **Scores**: groomed and ungroomed scores for each day, the best windows, confidence and when to be on the lift. **Directions** opens Google Maps with driving directions to the location, or the browser when Maps isn't installed. Google Maps gives the drive time, so the app doesn't need a home address.
+- **Widget**: the selected location's headline score, the other terrain's score and the lift time, with a Directions button. It updates after each refresh.
+- **Evening summaries**: the evening before a day whose score reaches the threshold, a notification gives the scores and lift time. Tapping it opens directions.
+- **Ratings**: **Rate a day you skied** rates any of the last seven days at the selected location.
+
+The **Settings** menu has units, the notification threshold (60 to 90, or off) and the summary time. The app refreshes the selected location every 30 minutes in the background. If summaries arrive late, set the app's battery use to **Unrestricted**. The app shows a note with a Settings button when battery optimization, notifications or exact alarms would get in the way.
+
 ## Adding a resort
 
 Locations are data, not code. Each one is an entry in [`Sources/NotchlineCore/Resources/locations.json`](Sources/NotchlineCore/Resources/locations.json) with its coordinates, time zone, forecast elevation, and where its observed snow comes from. A new resort in a region Notchline already covers (Washington, British Columbia) usually needs only a new entry. A resort elsewhere may need new data providers.
@@ -131,8 +151,21 @@ New providers should follow the rules the existing ones do: route text parsing, 
 | `make fetch LOCATION=mt-baker` | Prints a live snapshot for one location (`swift run notchline-fetch --list` lists IDs) |
 | `make release` | Builds a universal app and zips it into `build/` |
 | `swift scripts/make-icon.swift` | Redraws `Resources/AppIcon.icns` |
+| `make android` | Builds the core for Android and assembles the debug APK |
+| `make android-test` | Runs the core's tests on the connected arm64 device or emulator |
+| `make android-release` | Builds the signed release APK into `build/` and prints its SHA-256 |
 
 The code is a Swift package with no Xcode project. `NotchlineCore` holds the models, data providers and refresh logic, with no UI. `Notchline` is the SwiftUI app, using [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) for the notch.
+
+### Android build
+
+The Android app uses the same `NotchlineCore`, compiled with the [Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html), so scoring and confidence exist once. The UI is Kotlin and Jetpack Compose in [`android/`](android).
+
+- [`android/swift`](android/swift) is a second Swift package whose `NotchlineCore` and `NotchlineTests` are symlinks into the root package. It adds `NotchlineJNI`, a hand-written JNI bridge. Values cross it as UTF-8 JSON, since the core's models are `Codable`.
+- The Swift runtime is linked statically into `libNotchlineJNI.so`. Only the device test runner links it dynamically, because Swift Testing ships only as shared libraries.
+- The app is arm64-v8a only and has no drive times or departures. Google Maps handles the drive.
+- Building needs [swiftly](https://www.swift.org/swiftly/) with the toolchain in `android/swift/.swift-version`, the matching Swift SDK for Android, and NDK r30. [`scripts/android.sh`](scripts/android.sh) lists the commands and the environment variables they read.
+- The [Android workflow](.github/workflows/android.yml) builds the debug APK on pushes that touch the core or the app. The core's tests need an arm64 device, so they run locally.
 
 ### Releasing
 
@@ -143,6 +176,8 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 The [release workflow](.github/workflows/release.yml) runs the tests, builds the universal app, publishes it as a GitHub release, and updates the Homebrew cask and formula in [`Casks/`](Casks) and [`Formula/`](Formula). With Developer ID signing secrets configured (listed at the top of the workflow) the app is also notarized. Without them it is signed ad hoc.
+
+The Android APK is built and attached to the release by hand. `make android-release` signs it with a keystore kept outside the repo (`scripts/android.sh keystore` creates one). Every update must be signed with the same key, so back the keystore up. Without it, users would have to uninstall, losing their ratings, and install again.
 
 ## License
 
