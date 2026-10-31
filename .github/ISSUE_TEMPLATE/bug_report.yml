@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the app behaves wrongly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the problem is that conditions data looks wrong, please use
+        "Wrong conditions data" instead. It needs different details and
+        usually has a different cause.
+
+        For a security issue, do not open an issue. Use
+        [private reporting](https://github.com/appdin/notchline/security/advisories/new)
+        instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description: If it only happens sometimes, say what you were doing when it did.
+  - type: input
+    id: version
+    attributes:
+      label: Notchline version
+      description: Menu bar, then About.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [macOS, Android]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+  - type: input
+    id: location
+    attributes:
+      label: Selected location
+      description: Which ski area was picked, if it matters.

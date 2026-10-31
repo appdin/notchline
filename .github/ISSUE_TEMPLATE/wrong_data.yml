@@ -1,0 +1,47 @@
+name: Wrong conditions data
+description: A number or an avalanche rating looks incorrect or stale
+labels: [data]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Notchline has no data of its own. It reads public weather and
+        avalanche services, so a wrong value is usually either the upstream
+        source having changed, or the app picking the wrong station or
+        forecast zone for that location. Knowing which it is needs the
+        comparison below.
+
+        Avalanche danger shown here is a summary. A disagreement with the
+        full forecast is worth reporting, but always trust the forecast
+        center over this app.
+  - type: input
+    id: location
+    attributes:
+      label: Location
+    validations:
+      required: true
+  - type: input
+    id: metric
+    attributes:
+      label: Which metric
+      description: Base, last 24h, next 24h, temperature, wind, or avalanche.
+    validations:
+      required: true
+  - type: textarea
+    id: compare
+    attributes:
+      label: What it showed, and what the source said
+      description: >
+        The value in Notchline, the value you believe is right, and where
+        you got it. A link to the station or forecast page is ideal.
+    validations:
+      required: true
+  - type: input
+    id: age
+    attributes:
+      label: Data age shown
+      description: The hover view shows how old each reading is.
+  - type: input
+    id: version
+    attributes:
+      label: Notchline version

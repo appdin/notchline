@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/appdin/notchline/security/advisories/new
+    about: Report privately, not as a public issue. See SECURITY.md.
