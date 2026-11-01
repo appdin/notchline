@@ -14,15 +14,54 @@ BIN_DIR = $(shell swift build -c release $(SWIFT_FLAGS) --show-bin-path)
 # A secure timestamp needs a real identity; ad hoc signatures go without.
 CODESIGN_FLAGS = --force --options runtime $(if $(filter -,$(SIGN_IDENTITY)),,--timestamp)
 
-.PHONY: all build test app release run fetch android android-test android-release clean
+.PHONY: all help build test check audit hooks app release run fetch android android-test android-release clean
 
+# `all: app` stays the default so a bare `make` builds the app, which is what
+# the README documents.
 all: app
+
+help:
+	@echo "make app         Build and sign build/Notchline.app (the default)"
+	@echo "make build       Compile the release binary"
+	@echo "make test        Run the unit tests against saved fixtures"
+	@echo "make check       The gate: what the pre-push hook runs"
+	@echo "make hooks       Install the committed pre-push gate into .git/hooks"
+	@echo "make audit       Report known vulnerabilities (needs the network; blocks nothing)"
+	@echo "make run         Build, sign, quit any running copy and launch it"
+	@echo "make release     Build a universal app and zip it into build/"
+	@echo "make fetch LOCATION=mt-baker   Print a live snapshot for one location"
+	@echo "make android     Build the core for Android and assemble the debug APK"
+	@echo "make clean       Remove build output"
 
 build:
 	swift build -c release $(SWIFT_FLAGS) --product Notchline
 
 test:
 	swift test
+
+# The gate: what the pre-push hook runs, and what should pass before a change
+# lands. Just the tests for now. There is no `lint` target because
+# `swift format lint` with its default rules reports about nine thousand
+# findings against this codebase's existing style, so adding it means either
+# reformatting everything or writing a `.swift-format` config, and both are
+# style decisions rather than part of wiring up a gate.
+check: test
+
+hooks:
+	ln -sf "$(CURDIR)/scripts/git-hooks/pre-push" "$$(git rev-parse --path-format=absolute --git-common-dir)/hooks/pre-push"
+	@git config --local --unset core.hooksPath 2>/dev/null || true
+	@echo "hooks installed: pre-push runs 'make check'"
+
+FORMAT ?= text
+
+# Known-vulnerability report for this repo's dependencies. Report only: it is
+# deliberately unreachable from `check`, from `release` and from any git hook.
+# It needs the network, which the gate does not, and a build that fails
+# because someone published an advisory this morning is a build people learn
+# to bypass. .github/workflows/audit.yml runs it weekly instead, and that run
+# going red is the notification.
+audit:
+	@bin/vulnscan . --format $(FORMAT)
 
 # Assemble and sign Notchline.app from the release binary.
 app: build

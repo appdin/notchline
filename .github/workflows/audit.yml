@@ -1,0 +1,57 @@
+# Scheduled known-vulnerability report. Vendored from the scaffold repo by
+# scaffold-sync; edit it there, not here.
+#
+# This is the one thing a pre-push hook cannot do. A hook plus a solo
+# developer is the same coverage as CI, but only for work that a push
+# triggers, and a dependency becomes vulnerable while you are not pushing.
+# That is the whole reason this runs on a schedule rather than at the gate,
+# and the reason it is the only scheduled job here.
+#
+# Report only. A red run here is the notification; it blocks nothing.
+# `make check` and `make deploy` MUST NOT call vulnscan.
+#
+# This file is vendored into public repos, so it carries no project names,
+# hostnames or findings. Keep it that way.
+name: audit
+
+on:
+  schedule:
+    # 06:17 Pacific Monday, in UTC because GitHub only speaks UTC. The odd
+    # minute keeps it off the top-of-hour queue where scheduled runs get
+    # delayed by tens of minutes.
+    - cron: "17 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned, not `latest`: a scanner that silently changes what it
+      # considers a finding turns the weekly signal into noise. The rule
+      # against mutable references applies to the tool as much as to an
+      # image.
+      #
+      # Downloaded from the upstream public release rather than wrapped in a
+      # reusable action, so a public repo's CI never depends on a private one.
+      - name: Install osv-scanner
+        env:
+          OSV_SCANNER_VERSION: v2.7.0
+        run: |
+          set -euo pipefail
+          url="https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          curl -fsSL --retry 3 -o /usr/local/bin/osv-scanner "${url}"
+          chmod +x /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+      # The report goes to the run summary rather than an issue or an email
+      # body: it is already the page you land on from the failure
+      # notification, it keeps full markdown, and it needs no write token.
+      - name: Scan
+        run: |
+          set -euo pipefail
+          make audit FORMAT=markdown | tee -a "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,21 @@
+# Recorded exceptions for this repo's vulnerability report. Read natively by
+# osv-scanner, so vulnscan needs no logic of its own for it.
+#
+# An entry here means "I looked at this and decided not to act yet", which is
+# a legitimate answer and the only one that keeps the weekly report worth
+# reading. An unexplained silence is not, so `ignoreUntil` is required in
+# practice: the failure mode this file exists to prevent is a suppression that
+# outlives its reason. Six months is the ceiling.
+#
+# Hand-pinning a transitive dependency past its advisory -- an npm `overrides`
+# block, a Cargo patch -- is the same decision made invisibly, with no record
+# of which advisory it answered or whether it is still needed. If you do that,
+# the reason belongs here, next to the pin.
+#
+# A reason may name a code path in this repo. It should not name anything
+# outside it.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-15
+# reason = "Reached only through <path>, which this service never calls. Revisit when <dep> next moves."

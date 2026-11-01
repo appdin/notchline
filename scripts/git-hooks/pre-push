@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Runs the gate before allowing a push. Installed by `make hooks`, which
+# symlinks it into .git/hooks -- committing the hook means it is
+# version-controlled and a fresh clone is one command from protected.
+#
+# Bypass in a genuine emergency with `git push --no-verify`. If you find
+# yourself doing that more than rarely, the suite is too slow: that is the
+# signal to move it to CI, not to stop running it.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Swift Package Manager resolves and builds on demand, so there is nothing to
+# install first and nothing to check for here.
+
+echo "pre-push: running 'make check'..."
+make check

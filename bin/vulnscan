@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+"""Known-vulnerability report for a single repository, across every package manager it uses.
+
+    vulnscan [OPTIONS] [PATH]
+
+Wraps osv-scanner (one scanner, one advisory database) and does the three
+things osv-scanner deliberately leaves to the caller:
+
+  1. Splits findings into what the repo *ships* and what it only *builds*
+     with. This is not cosmetic: in a typical front-end tree the great
+     majority of npm advisories sit in the test runner, the linter and the
+     deploy CLI, and never reach a browser. A report that cannot tell those
+     apart gets skimmed once and then ignored, and an ignored report is the
+     same as no report.
+  2. Decides the exit code, so a scheduled run can notify without any gate
+     anywhere having to care. This is report-only by design: nothing in
+     `make check`, `make deploy` or a git hook should call it. A gate that
+     blocks on a third-party advisory gets bypassed the first time it is
+     inconvenient, and then protects nothing while still looking like it
+     does.
+  3. Keeps container-image findings out of the exit code. A freshly pulled
+     `python:3.12-slim` carries several hundred Debian advisories, most of
+     them with no fix in Debian stable. The OS layer is handled by rebuilding
+     the image often and running `apt-get upgrade` in it, not by working a
+     list that never reaches zero.
+
+Python rather than bash because the work is JSON reshaping, float comparison
+and lockfile traversal, and bash 3.2 (the macOS floor) is the wrong tool for
+all three. Standard library only, so it runs on a bare runner with nothing
+installed but osv-scanner.
+
+This file is vendored into public repos, including ones whose readers are not
+me. Keep its comments about mechanism: what the code does and why it has to do
+it that way. Nothing about what I run, how much of it there is, or what state
+it is in -- not even anonymously, because the reader knows whose account they
+are on. That history belongs in the private standards repo this file is
+vendored from. A lint there enforces this, so a paste that drifts back is
+refused rather than reviewed.
+
+Exit codes:
+  0  no shipped findings needing a decision
+  1  shipped findings present -- the report is the point, not a failure
+  2  the scanner could not run
+"""
+import argparse
+import fnmatch
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+# A manifest whose path matches one of these describes the toolchain, not the
+# artifact. Its findings are real but they are build-time supply chain, not
+# something an attacker can reach in production.
+BUILD_ONLY_MANIFESTS = (
+    "*requirements-dev.txt",
+    "*requirements/dev*.txt",
+    "*requirements-test.txt",
+    "*dev-requirements.txt",
+)
+
+# npm and uv both record which group pulled a package in. A package reached
+# only through these never ships.
+BUILD_ONLY_GROUPS = frozenset(
+    ("dev", "devDependencies", "optionalDependencies", "test", "lint", "docs", "build")
+)
+
+# Directories that hold a second copy of a manifest already being scanned.
+# `.claude/worktrees/` is the big one: every agent worktree carries the whole
+# repo, so a repo with one open worktree reported each advisory twice until
+# this list existed.
+# osv-scanner honours .gitignore, which covers node_modules and .venv in most
+# repos but not all of them, so they are repeated here.
+DEFAULT_EXCLUDES = (
+    ".claude/worktrees/*",
+    "*/node_modules/*",
+    "*/.venv/*",
+    ".venv/*",
+    "venv/*",
+    ".build/*",
+)
+
+SEVERITY_WORDS = {"CRITICAL": 9.0, "HIGH": 7.5, "MODERATE": 5.5, "MEDIUM": 5.5, "LOW": 2.0}
+
+
+def die(message):
+    print(f"vulnscan: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+# osv-scanner's exit codes that are not failures: 0 clean, 1 found
+# something, 128 nothing to scan. 128 matters more than it looks -- a repo
+# with no manifest osv-scanner recognises would otherwise fail the weekly run
+# for a reason that has nothing to do with security, which is the fastest way
+# to teach yourself to ignore a red run.
+OSV_OK = frozenset((0, 1, 128))
+
+
+def osv(args):
+    """Run osv-scanner and return its parsed JSON."""
+    proc = subprocess.run(
+        ["osv-scanner", *args, "--format", "json"],
+        capture_output=True,
+        text=True,
+    )
+    if not proc.stdout.strip():
+        if proc.returncode not in OSV_OK:
+            die(f"osv-scanner {' '.join(args)} failed:\n{proc.stderr.strip()}")
+        return {"results": []}
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        die(f"osv-scanner {' '.join(args)} produced unparseable output:\n{proc.stderr.strip()}")
+
+
+def severity_of(group, vulns_by_id):
+    """Highest CVSS in a finding group, or None when nothing rated it.
+
+    RUSTSEC advisories routinely carry no CVSS vector, so falling through to
+    the database's own severity word matters: without it, a real crates.io
+    advisory reads as unrated and gets filtered out of a severity-sorted
+    report.
+    """
+    raw = (group.get("max_severity") or "").strip()
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    for vid in group.get("ids", []):
+        word = (vulns_by_id.get(vid, {}).get("database_specific") or {}).get("severity")
+        if word and word.upper() in SEVERITY_WORDS:
+            return SEVERITY_WORDS[word.upper()]
+    return None
+
+
+def has_fix(vuln):
+    for affected in vuln.get("affected", []):
+        for rng in affected.get("ranges", []):
+            for event in rng.get("events", []):
+                if event.get("fixed"):
+                    return True
+    return False
+
+
+def npm_dev_only(lock_path):
+    """Map (name, version) -> True when every entry in an npm lockfile is dev.
+
+    osv-scanner only records `dependency_groups` for *direct* dependencies, so
+    a transitive of a devDependency comes back with no groups at all and would
+    otherwise read as shipped. That mislabels whole clusters of advisories
+    reached only through a dev tool, which then bury the few that genuinely
+    ship -- the exact failure mode the shipped/build-time split exists to
+    prevent. Lockfile v2/v3 marks each resolved entry, so the answer is
+    already on disk and needs neither a node_modules tree nor the network.
+    Cross-check a change here against `npm audit --omit=dev`, which resolves
+    the same boundary independently.
+    """
+    try:
+        with open(lock_path) as fh:
+            lock = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    shipped, seen = set(), set()
+    for path, meta in (lock.get("packages") or {}).items():
+        name = path.rsplit("node_modules/", 1)[-1]
+        if not name or not isinstance(meta, dict):
+            continue
+        key = (name, meta.get("version"))
+        seen.add(key)
+        if not (meta.get("dev") or meta.get("devOptional")):
+            shipped.add(key)
+    return {key: key not in shipped for key in seen}
+
+
+def build_only(source_path, abs_source, package_entry, npm_cache):
+    if any(fnmatch.fnmatch(source_path, pat) for pat in BUILD_ONLY_MANIFESTS):
+        return True
+    pkg = package_entry.get("package", {})
+    if pkg.get("ecosystem") == "npm" and os.path.basename(abs_source) == "package-lock.json":
+        if abs_source not in npm_cache:
+            npm_cache[abs_source] = npm_dev_only(abs_source)
+        flag = npm_cache[abs_source].get((pkg.get("name"), pkg.get("version")))
+        if flag is not None:
+            return flag
+    groups = package_entry.get("dependency_groups") or []
+    return bool(groups) and all(g in BUILD_ONLY_GROUPS for g in groups)
+
+
+def collect(report, repo_root, excludes):
+    """Flatten osv-scanner's nested output into one finding per row."""
+    rows = []
+    npm_cache = {}
+    for result in report.get("results", []):
+        source = result.get("source", {}).get("path", "")
+        rel = os.path.relpath(source, repo_root) if source.startswith("/") else source
+        if any(fnmatch.fnmatch(rel, pat) for pat in tuple(excludes) + DEFAULT_EXCLUDES):
+            continue
+        for entry in result.get("packages", []):
+            pkg = entry.get("package", {})
+            vulns_by_id = {v.get("id"): v for v in entry.get("vulnerabilities", [])}
+            for group in entry.get("groups", []):
+                ids = group.get("ids", [])
+                rows.append(
+                    {
+                        "ids": ids,
+                        "name": pkg.get("name", "?"),
+                        "version": pkg.get("version", "?"),
+                        "ecosystem": pkg.get("ecosystem", "?"),
+                        "source": rel,
+                        "severity": severity_of(group, vulns_by_id),
+                        "fixable": any(has_fix(vulns_by_id.get(i, {})) for i in ids),
+                        "build_only": build_only(rel, source, entry, npm_cache),
+                    }
+                )
+    # Dedupe: the same advisory shows up once per manifest that pins the
+    # package, and a multi-service repo pins the same library in each one.
+    seen, unique = set(), []
+    for row in sorted(rows, key=lambda r: (-(r["severity"] or 0), r["name"])):
+        key = (tuple(row["ids"]), row["name"], row["version"], row["source"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+    return unique
+
+
+def scanned_manifests(report, repo_root, excludes):
+    """Repo-relative paths of the manifests osv-scanner actually read.
+
+    Excluded the same way findings are, so a repo whose only manifest lives in
+    an excluded directory reports as unscanned rather than as clean.
+    """
+    paths = set()
+    for result in report.get("results", []):
+        source = result.get("source", {}).get("path", "")
+        if not source:
+            continue
+        rel = os.path.relpath(source, repo_root) if source.startswith("/") else source
+        if any(fnmatch.fnmatch(rel, pat) for pat in tuple(excludes) + DEFAULT_EXCLUDES):
+            continue
+        paths.add(rel)
+    return paths
+
+
+def sev_label(value):
+    if value is None:
+        return "unrated"
+    return f"{value:.1f}"
+
+
+def table(rows, markdown):
+    if not rows:
+        return ["  none\n"]
+    if markdown:
+        out = [
+            "| Severity | Package | Installed | Fixed upstream | Advisory | Manifest |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for r in rows:
+            ids = " ".join(f"[{i}](https://osv.dev/{i})" for i in r["ids"])
+            out.append(
+                f"| {sev_label(r['severity'])} | `{r['name']}` | {r['version']} | "
+                f"{'yes' if r['fixable'] else 'no'} | {ids} | `{r['source']}` |"
+            )
+        return out + [""]
+    out = []
+    for r in rows:
+        fix = "fix available" if r["fixable"] else "no fix published"
+        out.append(
+            f"  {sev_label(r['severity']):>7}  {r['name']} {r['version']} "
+            f"({r['ecosystem']}, {fix})"
+        )
+        out.append(f"           {', '.join(r['ids'])}  in {r['source']}")
+    return out + [""]
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="vulnscan", description=__doc__.splitlines()[0])
+    ap.add_argument("path", nargs="?", default=".", help="repo root to scan (default: .)")
+    ap.add_argument(
+        "--image",
+        action="append",
+        default=[],
+        metavar="REF",
+        help="also scan a container image by tag or digest; repeatable. "
+        "Image findings are reported but never affect the exit code.",
+    )
+    ap.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="skip manifests whose repo-relative path matches GLOB; repeatable. "
+        "For dead code a repo keeps on purpose, such as an archive/ directory. "
+        f"Always skipped: {', '.join(DEFAULT_EXCLUDES)}.",
+    )
+    ap.add_argument(
+        "--min-severity",
+        type=float,
+        default=7.0,
+        metavar="N",
+        help="CVSS at or above which a shipped finding sets the exit code "
+        "(default 7.0). Unrated shipped findings always count: a RUSTSEC "
+        "advisory with no vector is not a mild one.",
+    )
+    ap.add_argument("--format", choices=("text", "markdown"), default="text")
+    ap.add_argument("--title", default=None, help="heading for the report (default: repo name)")
+    args = ap.parse_args()
+
+    if not shutil.which("osv-scanner"):
+        die("osv-scanner is not on PATH. Install it with 'brew install osv-scanner'.")
+
+    root = os.path.abspath(args.path)
+    if not os.path.isdir(root):
+        die(f"not a directory: {root}")
+    title = args.title or os.path.basename(root)
+    md = args.format == "markdown"
+
+    # --config, explicitly, because osv-scanner looks for osv-scanner.toml
+    # only in the directory of each manifest it scans. A repo-root one -- the
+    # single place a reader expects a repo-wide setting, and what the template
+    # produces -- is silently ignored without this. The failure mode is the
+    # worst kind: the exception is written, reviewed, committed, and has no
+    # effect, so the finding keeps appearing and the file stops being trusted.
+    # Found on 2026-10-31 by recording a real exception and watching it do
+    # nothing.
+    config = os.path.join(root, "osv-scanner.toml")
+    # --all-packages so the report can tell a manifest with no findings from a
+    # manifest that was never read. Without it osv-scanner emits a result
+    # block only for a manifest that has at least one finding, so the count
+    # below came from the findings themselves and a genuinely clean repo
+    # reported "no dependency manifest found" -- the one sentence that is
+    # supposed to warn that a clean report is not coverage, printed exactly
+    # when the clean report *was* coverage. Patching a repo to zero turned the
+    # warning on, which is the moment it is least likely to be believed.
+    # Clean packages add no rows: collect() only walks `groups`.
+    scan = ["scan", "source", "-r", root, "--all-packages"]
+    if os.path.isfile(config):
+        scan += ["--config", config]
+    report = osv(scan)
+    rows = collect(report, root, args.exclude)
+    manifests = len(scanned_manifests(report, root, args.exclude))
+    shipped = [r for r in rows if not r["build_only"]]
+    build = [r for r in rows if r["build_only"]]
+    tripping = [r for r in shipped if r["severity"] is None or r["severity"] >= args.min_severity]
+
+    lines = []
+    head = (lambda s: f"## {s}") if md else (lambda s: f"{s}\n{'-' * len(s)}")
+    lines.append(f"# {title}: known vulnerabilities" if md else f"=== {title}: known vulnerabilities")
+    lines.append("")
+    if not manifests:
+        # An empty report and an unread repo look identical, so say which.
+        note = (
+            "No dependency manifest found. Either this repo vendors its "
+            "dependencies or osv-scanner does not read its format; check "
+            "before treating a clean report as coverage."
+        )
+        lines.append(f"**{note}**" if md else f"  NOTE: {note}")
+        lines.append("")
+    lines.append(
+        head(
+            f"Shipped ({len(shipped)}; {len(tripping)} needing a decision "
+            f"at CVSS >= {args.min_severity} or unrated)"
+        )
+    )
+    lines += table(shipped, md)
+    lines.append(head(f"Build-time only ({len(build)})"))
+    if md and build:
+        lines.append("<details><summary>Toolchain and test dependencies. Supply-chain risk at")
+        lines.append("build time; not reachable in the deployed artifact.</summary>")
+        lines.append("")
+    lines += table(build, md)
+    if md and build:
+        lines.append("</details>")
+        lines.append("")
+
+    for ref in args.image:
+        img_scan = ["scan", "image", ref]
+        if os.path.isfile(config):
+            img_scan += ["--config", config]
+        img = collect(osv(img_scan), root, [])
+        fixable = [r for r in img if r["fixable"]]
+        lines.append(head(f"Image {ref}"))
+        lines.append(
+            f"  {len(img)} findings, {len(fixable)} with a fix published upstream. "
+            if not md
+            else f"{len(img)} findings, {len(fixable)} with a fix published upstream."
+        )
+        note = (
+            "OS-layer findings are cleared by rebuilding the image, not by "
+            "working this list. They do not affect the exit code."
+        )
+        lines.append(f"  {note}" if not md else note)
+        lines.append("")
+
+    print("\n".join(lines))
+
+    if tripping:
+        rated = [r["severity"] for r in tripping if r["severity"] is not None]
+        unrated = len(tripping) - len(rated)
+        # Never fold unrated into the worst score. Printing "worst 10.0"
+        # because a RUSTSEC advisory carried no CVSS vector is the kind of
+        # inflation that gets a whole report disbelieved.
+        detail = f"worst {max(rated):.1f}" if rated else "none rated"
+        if unrated:
+            detail += f", {unrated} unrated"
+        print(
+            f"{len(tripping)} shipped finding(s) needing a decision "
+            f"(CVSS >= {args.min_severity} or unrated; {detail}). Report only: "
+            f"patch by hand, or record a dated exception in osv-scanner.toml.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
