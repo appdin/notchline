@@ -31,6 +31,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # A runner starts with about 14 GB free, and scanning a large image
+      # needs several times the image's size: the build itself, then
+      # osv-scanner saving the image to a tar in /tmp and unpacking every
+      # layer beside it. An image that carries a cloud SDK ran the disk out
+      # partway through the scan, so no summary was written.
+      # These preinstalled toolchains are never used by an audit and free
+      # roughly 20 GB. /opt/hostedtoolcache is left alone apart from CodeQL,
+      # because a repository's audit target may use the Go or Python there.
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       # Pinned, not `latest`: a scanner that silently changes what it
       # considers a finding turns the weekly signal into noise. The rule
       # against mutable references applies to the tool as much as to an
