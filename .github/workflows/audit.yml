@@ -51,7 +51,59 @@ jobs:
       # The report goes to the run summary rather than an issue or an email
       # body: it is already the page you land on from the failure
       # notification, it keeps full markdown, and it needs no write token.
+      #
+      # SUMMARY names the file vulnscan writes its image findings to, as
+      # JSON, when the repository's audit target passes it on with
+      # --summary. A target that scans no image writes a summary with none.
       - name: Scan
+        env:
+          SUMMARY: ${{ runner.temp }}/audit-summary.json
         run: |
           set -euo pipefail
-          make audit FORMAT=markdown | tee -a "${GITHUB_STEP_SUMMARY}"
+          make audit FORMAT=markdown SUMMARY="${SUMMARY}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      # Each week's image findings are kept in a bucket that belongs to this
+      # repository alone, under the scan's UTC date, so a later report can
+      # tell when each finding appeared and when it went away. The key can
+      # only upload there: it cannot read, list or delete, and the bucket
+      # keeps every version of every object, so a week that is overwritten
+      # stays recoverable. A repository without the secrets keeps no image
+      # history and skips the upload.
+      #
+      # It runs after a failed scan too, because a scan that found shipped
+      # advisories fails the step and has still written its summary.
+      - name: Upload image findings
+        if: ${{ !cancelled() }}
+        env:
+          SUMMARY: ${{ runner.temp }}/audit-summary.json
+          AUDIT_TIGRIS_BUCKET: ${{ secrets.AUDIT_TIGRIS_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AUDIT_TIGRIS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AUDIT_TIGRIS_SECRET }}
+          # Tigris answers to the region "auto", and rejects the checksum
+          # headers AWS CLI v2 adds to every upload unless told to send them
+          # only when an operation requires one.
+          AWS_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          if [ -z "${AUDIT_TIGRIS_BUCKET}" ]; then
+            echo "No AUDIT_TIGRIS_BUCKET secret, so no image history is kept."
+            exit 0
+          fi
+          # A missing summary has to fail the run. Uploading nothing quietly
+          # would show later as a missed week, long after anyone could ask
+          # why.
+          if [ ! -s "${SUMMARY}" ]; then
+            echo "::error::make audit wrote no image summary. Its vulnscan call needs --summary \$(SUMMARY), or the scan stopped before writing one."
+            exit 1
+          fi
+          day="$(jq -r '.scanned_at[0:10]' "${SUMMARY}")"
+          if ! [[ "${day}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::the image summary has no usable scanned_at date."
+            exit 1
+          fi
+          aws s3 cp "${SUMMARY}" "s3://${AUDIT_TIGRIS_BUCKET}/${day}.json" \
+            --endpoint-url https://fly.storage.tigris.dev \
+            --content-type application/json --only-show-errors
+          echo "Uploaded this week's image findings as ${day}.json."

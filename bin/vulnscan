@@ -43,6 +43,7 @@ Exit codes:
   2  the scanner could not run
 """
 import argparse
+import datetime
 import fnmatch
 import json
 import os
@@ -144,6 +145,60 @@ def has_fix(vuln):
     return False
 
 
+def fixed_version(ids, vulns_by_id, name):
+    """The version that fixes a finding, or None when none is published.
+
+    An advisory can list several packages, and a distribution advisory
+    lists each release's package separately, so the package's own entry is
+    preferred. Versions are not compared: each ecosystem orders them its own
+    way, and Debian's rules in particular are not worth reimplementing to
+    pick between fixes that, for one package, are nearly always the same
+    version. The first one listed is taken.
+    """
+    fallback = None
+    for vid in ids:
+        for affected in vulns_by_id.get(vid, {}).get("affected", []):
+            own = (affected.get("package") or {}).get("name") == name
+            for rng in affected.get("ranges", []):
+                for event in rng.get("events", []):
+                    fixed = event.get("fixed")
+                    if not fixed:
+                        continue
+                    if own:
+                        return fixed
+                    fallback = fallback or fixed
+    return fallback
+
+
+def canonical_id(ids):
+    """One stable id for a group of aliases.
+
+    A later scan decides whether a finding went away by comparing ids, so the
+    choice must not depend on the order the database happened to list them
+    in. A CVE number is the name most other tools use, then a GitHub
+    advisory id, then whatever sorts first.
+    """
+    for prefix in ("CVE-", "GHSA-"):
+        matches = sorted(i for i in ids if i.startswith(prefix))
+        if matches:
+            return matches[0]
+    return sorted(ids)[0] if ids else "?"
+
+
+def severity_word(score):
+    """CVSS bands as the summary names them. None stays None: a finding no
+    database rated is reported as unrated, never guessed into a band."""
+    if score is None:
+        return None
+    if score >= 9.0:
+        return "critical"
+    if score >= 7.0:
+        return "high"
+    if score >= 4.0:
+        return "medium"
+    return "low"
+
+
 def npm_dev_only(lock_path):
     """Map (name, version) -> True when every entry in an npm lockfile is dev.
 
@@ -211,6 +266,7 @@ def collect(report, repo_root, excludes):
                         "source": rel,
                         "severity": severity_of(group, vulns_by_id),
                         "fixable": any(has_fix(vulns_by_id.get(i, {})) for i in ids),
+                        "fixed": fixed_version(ids, vulns_by_id, pkg.get("name")),
                         "build_only": build_only(rel, source, entry, npm_cache),
                     }
                 )
@@ -242,6 +298,69 @@ def scanned_manifests(report, repo_root, excludes):
             continue
         paths.add(rel)
     return paths
+
+
+def image_findings(rows):
+    """An image's findings as the summary records them, one per advisory and
+    package. collect() keeps one row per manifest, and an image can record
+    the same package in more than one place."""
+    out, seen = [], set()
+    for r in rows:
+        fid = canonical_id(r["ids"])
+        key = (fid, r["name"], r["version"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {
+                "id": fid,
+                "package": r["name"],
+                "installed": r["version"],
+                "fixed": r["fixed"],
+                "severity": severity_word(r["severity"]),
+            }
+        )
+    return sorted(out, key=lambda f: (f["package"], f["id"]))
+
+
+def current_commit(root):
+    """The commit being scanned: GitHub's own variable in a workflow, git
+    otherwise, and None outside a repository rather than a failed scan."""
+    sha = os.environ.get("GITHUB_SHA")
+    if sha:
+        return sha
+    proc = subprocess.run(
+        ["git", "-C", root, "rev-parse", "HEAD"], capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def write_summary(path, repo, commit, images):
+    """Write the summary next to its final name and rename it into place, so
+    a scan that dies halfway leaves no file rather than half of one. An
+    uploader that finds no file then uploads nothing, and the gap shows as a
+    missed week instead of as a week with fewer findings."""
+    summary = {
+        "repo": repo,
+        "commit": commit,
+        "scanned_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "images": images,
+    }
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as fh:
+        json.dump(summary, fh, indent=2)
+        fh.write("\n")
+    os.replace(tmp, path)
+
+
+def parse_image(spec):
+    """NAME=REF, or a bare REF that also serves as its own name."""
+    name, sep, ref = spec.partition("=")
+    if sep and name and ref:
+        return name, ref
+    return spec, spec
 
 
 def sev_label(value):
@@ -283,9 +402,17 @@ def main():
         "--image",
         action="append",
         default=[],
-        metavar="REF",
+        metavar="[NAME=]REF",
         help="also scan a container image by tag or digest; repeatable. "
+        "NAME labels it in the report and the summary, and defaults to REF. "
         "Image findings are reported but never affect the exit code.",
+    )
+    ap.add_argument(
+        "--summary",
+        metavar="FILE",
+        default=None,
+        help="also write every image finding to FILE as JSON, one entry per "
+        "advisory and package, so a later scan can tell which went away.",
     )
     ap.add_argument(
         "--exclude",
@@ -376,13 +503,18 @@ def main():
         lines.append("</details>")
         lines.append("")
 
-    for ref in args.image:
+    images = {}
+    for spec in args.image:
+        name, ref = parse_image(spec)
+        if name in images:
+            die(f"image name {name!r} is given more than once; give each image a NAME= of its own")
         img_scan = ["scan", "image", ref]
         if os.path.isfile(config):
             img_scan += ["--config", config]
         img = collect(osv(img_scan), root, [])
+        images[name] = image_findings(img)
         fixable = [r for r in img if r["fixable"]]
-        lines.append(head(f"Image {ref}"))
+        lines.append(head(f"Image {name}" if name == ref else f"Image {name} ({ref})"))
         lines.append(
             f"  {len(img)} findings, {len(fixable)} with a fix published upstream. "
             if not md
@@ -396,6 +528,9 @@ def main():
         lines.append("")
 
     print("\n".join(lines))
+
+    if args.summary:
+        write_summary(args.summary, title, current_commit(root), images)
 
     if tripping:
         rated = [r["severity"] for r in tripping if r["severity"] is not None]
